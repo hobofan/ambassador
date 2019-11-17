@@ -1,6 +1,6 @@
 [package]
 name = "ambassador"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Maximilian Goisser <goisser94@gmail.com>"]
 edition = "2018"
 description = "Trait implementation delegation via procedural macros"
