@@ -15,22 +15,11 @@ impl Shout for Cat {
     }
 }
 
-pub struct Dog;
-
-impl Shout for Dog {
-    fn shout(&self, input: &str) -> String {
-        format!("{} - wuff!", input)
-    }
-}
-
 #[derive(Delegate)]
 #[delegate(Shout)]
-pub enum Animal {
-    Cat(Cat),
-    Dog(Dog),
-}
+pub struct WrappedCat(Cat);
 
 pub fn main() {
-    let foo_animal = Animal::Cat(Cat);
+    let foo_animal = WrappedCat(Cat);
     println!("{}", foo_animal.shout("BAR"));
 }

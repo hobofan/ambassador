@@ -6,7 +6,12 @@ use syn::{parse_macro_input, DeriveInput};
 
 #[derive(Clone)]
 enum DelegateImplementer {
-    Enum { variant_idents: Vec<syn::Ident> },
+    Enum {
+        variant_idents: Vec<syn::Ident>,
+    },
+    SingleFieldStruct {
+        field_ident: proc_macro2::TokenStream,
+    },
 }
 
 #[proc_macro_derive(Delegate, attributes(delegate))]
@@ -25,15 +30,55 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
     }
 
     let implementer_ident = input.ident.clone();
-    let implementer = match input.clone().data {
+    let implementer: Option<DelegateImplementer> = match input.clone().data {
         syn::Data::Enum(enum_data) => {
             let variant_idents = enum_data.variants.into_iter().map(|n| n.ident).collect();
-            DelegateImplementer::Enum { variant_idents }
+            Some(DelegateImplementer::Enum { variant_idents })
         }
-        _ => panic!(
-            "ambassador currently only supports #[derive(Delegate)] for: \n- single-field enums"
-        ),
+        syn::Data::Struct(struct_data) => match struct_data.fields {
+            syn::Fields::Unnamed(fields_unnamed) => {
+                match fields_unnamed.unnamed.into_iter().collect::<Vec<_>>().len() {
+                    1 => Some(DelegateImplementer::SingleFieldStruct {
+                        field_ident: quote! { 0 },
+                    }),
+                    _ => None,
+                }
+            }
+            syn::Fields::Named(fields_named) => {
+                match fields_named
+                    .named
+                    .clone()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+                    .len()
+                {
+                    1 => {
+                        let field_ident = fields_named
+                            .named
+                            .into_iter()
+                            .next()
+                            .unwrap()
+                            .ident
+                            .unwrap();
+                        Some(DelegateImplementer::SingleFieldStruct {
+                            field_ident: quote! { #field_ident },
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        },
+        _ => None,
     };
+    if let None = implementer {
+        panic!(
+            "ambassador currently only supports #[derive(Delegate)] for: \n\
+             - single-field enums\n\
+             - single field (tuple) structs"
+        )
+    }
+    let implementer = implementer.unwrap();
 
     let mut impl_macros = vec![];
 
@@ -54,6 +99,11 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
             DelegateImplementer::Enum { variant_idents } => {
                 quote! {
                     #trait_path#trait_path_colon#macro_name!{Enum; #implementer_ident; #(#implementer_ident::#variant_idents),*}
+                }
+            }
+            DelegateImplementer::SingleFieldStruct { field_ident } => {
+                quote! {
+                    #trait_path#trait_path_colon#macro_name!{SingleFieldStruct; #implementer_ident; #field_ident}
                 }
             }
         };
@@ -117,7 +167,8 @@ pub fn delegatable_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let enum_trait_methods = build_enum_trait_methods(original_trait_methods);
+    let enum_trait_methods = build_enum_trait_methods(original_trait_methods.clone());
+    let single_field_struct_methods = build_single_field_struct_methods(original_trait_methods);
 
     let register_trait = quote! {
         #[macro_export]
@@ -126,7 +177,12 @@ pub fn delegatable_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 impl #trait_ident for $implementer {
                     #(#enum_trait_methods)*
                 }
-            }
+            };
+            (SingleFieldStruct; $implementer:ty; $field_ident:tt) => {
+                impl #trait_ident for $implementer {
+                    #(#single_field_struct_methods)*
+                }
+            };
         }
     };
 
@@ -144,18 +200,7 @@ fn build_enum_trait_methods(
     let mut enum_trait_methods = vec![];
     for original_method in original_trait_methods {
         let method_sig = original_method.sig.clone();
-        let method_ident = method_sig.ident.clone();
-        let argument_list: syn::punctuated::Punctuated<syn::Pat, syn::token::Comma> = method_sig
-            .inputs
-            .clone()
-            .into_iter()
-            .filter_map(|fn_arg| match fn_arg {
-                syn::FnArg::Receiver(_) => None,
-                syn::FnArg::Typed(pat_type) => Some(pat_type),
-            })
-            .map(|pat_type| *pat_type.pat.to_owned())
-            .collect();
-        let method_invocation = quote! { inner.#method_ident(#argument_list) };
+        let method_invocation = build_method_invocation(original_method, quote!(inner));
 
         let method_impl = quote! {
             #method_sig {
@@ -167,4 +212,43 @@ fn build_enum_trait_methods(
         enum_trait_methods.push(method_impl);
     }
     enum_trait_methods
+}
+
+fn build_single_field_struct_methods(
+    original_trait_methods: Vec<syn::TraitItemMethod>,
+) -> Vec<proc_macro2::TokenStream> {
+    let mut enum_trait_methods = vec![];
+    for original_method in original_trait_methods {
+        let method_sig = original_method.sig.clone();
+        let method_invocation = build_method_invocation(original_method, quote!(self.$field_ident));
+
+        let method_impl = quote! {
+            #method_sig {
+                #method_invocation
+            }
+        };
+        enum_trait_methods.push(method_impl);
+    }
+    enum_trait_methods
+}
+
+fn build_method_invocation(
+    original_method: syn::TraitItemMethod,
+    field_ident: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let method_sig = original_method.sig.clone();
+    let method_ident = method_sig.ident.clone();
+    let argument_list: syn::punctuated::Punctuated<syn::Pat, syn::token::Comma> = method_sig
+        .inputs
+        .clone()
+        .into_iter()
+        .filter_map(|fn_arg| match fn_arg {
+            syn::FnArg::Receiver(_) => None,
+            syn::FnArg::Typed(pat_type) => Some(pat_type),
+        })
+        .map(|pat_type| *pat_type.pat.to_owned())
+        .collect();
+
+    let method_invocation = quote! { #field_ident.#method_ident(#argument_list) };
+    method_invocation
 }
