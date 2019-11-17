@@ -1,0 +1,16 @@
+[package]
+name = "ambassador"
+version = "0.1.0"
+authors = ["Maximilian Goisser <goisser94@gmail.com>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0.8", features = ["full"] }
+quote = "1.0.2"
+proc-macro2 = "1.0.6"
+
+[dev-dependencies]
+compiletest_rs = { version = "0.3.25", features = [ "stable" ]}
