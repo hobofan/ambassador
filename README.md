@@ -10,7 +10,61 @@ Delegating the implementation of traits to enum variants or fields of a struct n
 cargo add ambassador
 ```
 
-## Usage
+## General Usage
+
+### `#[delegatable_trait]`
+
+First we need to make our trait available for delegation by adding a `#[delegatable_trait]` attribute to it (this also makes your trait delegatable in other crates):
+
+```rust
+use ambassador::delegatable_trait;
+
+#[delegatable_trait] // <-------
+pub trait Shout {
+    fn shout(&self, input: &str) -> String;
+}
+```
+
+### `#[derive(Delegate)]` & `#[delegate(Trait)]`
+
+Now we can delegate the implementation of our trait to a struct field/enum variants by adding `#[derive(Delegate)]` and its associated attribute `#[delegate(Trait)]` to it:
+
+```rust
+use ambassador::Delegate;
+
+pub struct Cat;
+
+impl Shout for Cat {
+    fn shout(&self, input: &str) -> String {
+        format!("{} - meow!", input)
+    }
+}
+
+#[derive(Delegate)] // <-------
+#[delegate(Shout)] // <-------- Delegate implementation of Shout to struct field
+pub struct WrappedCat(Cat);
+```
+
+### For remote traits: `#[delegatable_trait_remote]`
+
+If you want to make an existing trait that lives outside you crate available for delegation, you can do so by copy-pasting it's signature into your code and using the `#[delegatable_trait_remote]` attribute (see [full code sample](./ambassador/tests/run-pass/delegate_trait_remote_display.rs)):
+
+```rust
+use ambassador::delegatable_trait_remote;
+use std::fmt::Display;
+
+#[delegatable_trait_remote]
+trait Display {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error>;
+}
+
+#[derive(Delegate)]
+#[delegate(Display)] // <-------- Delegate implementation of Display to struct field
+pub struct WrappedCat(Cat);
+```
+
+
+## Usage Examples
 
 In this example we have a trait `Shout` that is implemented for both `Cat` and `Dog`.
 
@@ -122,5 +176,5 @@ pub fn main() {
 ## TODO:
 
 - [ ] attribute for `Delegate` to select delegation target for multi-field structs
-- [ ] macro to allow for implementation of traits from external crates
+- [x] macro to allow for implementation of traits from external crates
 - [ ] Support for mole complex traits (generics, associated consts, etc.)
