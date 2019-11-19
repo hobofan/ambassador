@@ -1,6 +1,6 @@
 # Ambassador - Delegate trait implementations via procedural macros
 
-⚠️ This crate currently requires the **beta** Rust toolchain. The corresponding stable version 1.40 is planned to be released on 2019-12-19.
+⚠ This crate currently requires the **beta** Rust toolchain. The corresponding stable version 1.40 is planned to be released on 2019-12-19.
 
 Delegating the implementation of traits to enum variants or fields of a struct normally requires a lot of boilerplate code. Ambassador is an attempt to eliminate that boilerplate by deriving the delegating trait implementation via procedural macros.
 
@@ -177,4 +177,4 @@ pub fn main() {
 
 - [ ] attribute for `Delegate` to select delegation target for multi-field structs
 - [x] macro to allow for implementation of traits from external crates
-- [ ] Support for mole complex traits (generics, associated consts, etc.)
+- [ ] Support for more complex traits (generics, associated consts, etc.)
