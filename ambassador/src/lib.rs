@@ -73,57 +73,45 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
 
-    let delegate_attributes: Vec<syn::Attribute> = input
-        .clone()
+    let delegate_attributes: Vec<&syn::Attribute> = input
         .attrs
-        .into_iter()
+        .iter()
         .filter(|n| n.path.is_ident("delegate"))
         .collect();
     if delegate_attributes.is_empty() {
         panic!("No #[delegate] attribute specified. If you want to delegate an implementation of trait `SomeTrait` add the attribute:\n#[delegate(SomeTrait)]")
     }
 
-    let implementer_ident = input.ident.clone();
+    let implementer_ident = input.ident;
     let implementer: Option<DelegateImplementer> = match input.data {
         syn::Data::Enum(enum_data) => {
             let variant_idents = enum_data.variants.into_iter().map(|n| n.ident).collect();
             Some(DelegateImplementer::Enum { variant_idents })
         }
         syn::Data::Struct(struct_data) => match struct_data.fields {
-            syn::Fields::Unnamed(fields_unnamed) => {
-                match fields_unnamed.unnamed.into_iter().count() {
-                    1 => Some(DelegateImplementer::SingleFieldStruct {
-                        field_ident: syn::parse_quote! { 0 },
-                    }),
-                    _ => None,
+            syn::Fields::Unnamed(fields_unnamed) => match fields_unnamed.unnamed.len() {
+                1 => Some(DelegateImplementer::SingleFieldStruct {
+                    field_ident: syn::parse_quote! { 0 },
+                }),
+                _ => None,
+            },
+            syn::Fields::Named(fields_named) => match fields_named.named.len() {
+                1 => {
+                    let field_ident = fields_named.named[0].ident.as_ref().unwrap();
+                    Some(DelegateImplementer::SingleFieldStruct {
+                        field_ident: syn::parse_quote! { #field_ident },
+                    })
                 }
-            }
-            syn::Fields::Named(fields_named) => {
-                match fields_named.named.clone().into_iter().count() {
-                    0 => None,
-                    1 => {
-                        let field_ident = fields_named
-                            .named
-                            .into_iter()
-                            .next()
-                            .unwrap()
-                            .ident
-                            .unwrap();
-                        Some(DelegateImplementer::SingleFieldStruct {
-                            field_ident: syn::parse_quote! { #field_ident },
-                        })
-                    }
-                    _ => {
-                        let field_idents: Vec<_> = fields_named
-                            .named
-                            .into_iter()
-                            .map(|field| field.ident.unwrap())
-                            .map(|field_ident| syn::parse_quote! { #field_ident })
-                            .collect();
-                        Some(DelegateImplementer::MultiFieldStruct { field_idents })
-                    }
+                _ => {
+                    let field_idents: Vec<_> = fields_named
+                        .named
+                        .into_iter()
+                        .map(|field| field.ident.unwrap())
+                        .map(|field_ident| syn::parse_quote! { #field_ident })
+                        .collect();
+                    Some(DelegateImplementer::MultiFieldStruct { field_idents })
                 }
-            }
+            },
             _ => None,
         },
         _ => None,
