@@ -47,10 +47,10 @@ pub struct WrappedCat(Cat);
 
 #### `#[delegate(..., target = "foo")]` - `target` key
 
-For structs with multiple fields, the field that should act as delgation target can be specified via the `target` key:
+For structs with multiple fields, the field that should act as delegation target can be specified via the `target` key:
 
 ```rust
-#[derive(Delegate)] // <-------
+#[derive(Delegate)]
 #[delegate(Shout, target = "foo")] // <-------- Delegate implementation of Shout to struct field .foo
 pub struct WrappedCats {
   foo: Cat,
