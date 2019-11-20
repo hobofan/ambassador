@@ -4,14 +4,68 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum DelegateImplementer {
-    Enum {
-        variant_idents: Vec<syn::Ident>,
-    },
-    SingleFieldStruct {
-        field_ident: proc_macro2::TokenStream,
-    },
+    Enum { variant_idents: Vec<syn::Ident> },
+    SingleFieldStruct { field_ident: syn::Member },
+    MultiFieldStruct { field_idents: Vec<syn::Member> },
+}
+
+struct DelegateArgs {
+    trait_path_full: syn::Path,
+    target: Option<syn::Member>,
+}
+
+impl DelegateArgs {
+    pub fn from_meta(meta: &syn::Meta) -> Self {
+        let meta_list = match meta {
+            syn::Meta::List(meta_list) => meta_list,
+            _ => panic!("Invalid syntax for delegate attribute"),
+        };
+
+        let nested_meta_items: Vec<syn::Meta> = meta_list
+            .nested
+            .clone()
+            .into_iter()
+            .map(|n| match n {
+                syn::NestedMeta::Meta(meta) => meta,
+                _ => panic!("Invalid syntax for delegate attribute"),
+            })
+            .collect();
+        let trait_path_full = match nested_meta_items[0] {
+            syn::Meta::Path(ref path) => path.clone(),
+            _ => panic!(
+                "Invalid syntax for delegate attribute; First value has to be the Trait name"
+            ),
+        };
+
+        let mut target = None;
+        for meta_item in nested_meta_items.iter().skip(1) {
+            match meta_item {
+                syn::Meta::NameValue(name_value) => {
+                    if name_value.path.is_ident("target") {
+                        match name_value.lit {
+                        syn::Lit::Str(ref lit) => {
+                            let target_val: syn::Member = lit.parse().expect("Invalid syntax for delegate attribute; Expected ident as value for \"target\"");
+                            if !target.is_none() {
+                                panic!("\"target\" value for delegate attribute can only be specified once");
+                            }
+
+                            target = Some(target_val);
+                        }
+                        _ => panic!("Invalid syntax for delegate attribute; delegate attribute values have to be strings"),
+                    }
+                    }
+                }
+                _ => panic!("Invalid syntax for delegate attribute"),
+            }
+        }
+
+        Self {
+            trait_path_full,
+            target,
+        }
+    }
 }
 
 #[proc_macro_derive(Delegate, attributes(delegate))]
@@ -39,7 +93,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
             syn::Fields::Unnamed(fields_unnamed) => {
                 match fields_unnamed.unnamed.into_iter().collect::<Vec<_>>().len() {
                     1 => Some(DelegateImplementer::SingleFieldStruct {
-                        field_ident: quote! { 0 },
+                        field_ident: syn::parse_quote! { 0 },
                     }),
                     _ => None,
                 }
@@ -52,6 +106,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                     .collect::<Vec<_>>()
                     .len()
                 {
+                    0 => None,
                     1 => {
                         let field_ident = fields_named
                             .named
@@ -61,10 +116,18 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                             .ident
                             .unwrap();
                         Some(DelegateImplementer::SingleFieldStruct {
-                            field_ident: quote! { #field_ident },
+                            field_ident: syn::parse_quote! { #field_ident },
                         })
                     }
-                    _ => None,
+                    _ => {
+                        let field_idents: Vec<_> = fields_named
+                            .named
+                            .into_iter()
+                            .map(|field| field.ident.unwrap())
+                            .map(|field_ident| syn::parse_quote! { #field_ident })
+                            .collect();
+                        Some(DelegateImplementer::MultiFieldStruct { field_idents })
+                    }
                 }
             }
             _ => None,
@@ -83,7 +146,8 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
     let mut impl_macros = vec![];
 
     for delegate_attr in delegate_attributes {
-        let trait_path_full: syn::Path = delegate_attr.parse_args().unwrap();
+        let args = DelegateArgs::from_meta(&delegate_attr.parse_meta().unwrap());
+        let trait_path_full: syn::Path = args.trait_path_full.clone();
         let trait_ident: syn::Ident = trait_path_full
             .segments
             .clone()
@@ -102,6 +166,23 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                 }
             }
             DelegateImplementer::SingleFieldStruct { field_ident } => {
+                quote! {
+                    #trait_path#trait_path_colon#macro_name!{SingleFieldStruct; #implementer_ident; #field_ident}
+                }
+            }
+            DelegateImplementer::MultiFieldStruct { field_idents } => {
+                if args.target.is_none() {
+                    panic!("\"target\" value on #[delegate] attribute has to be specified for structs with multiple fields");
+                }
+
+                let field_ident = field_idents
+                    .iter()
+                    .find(|n| **n == args.target.clone().unwrap());
+                if field_ident.is_none() {
+                    panic!("Unknown field \"{}\" specified as \"target\" value in #[delegate] attribute");
+                }
+                let field_ident = field_ident.unwrap();
+
                 quote! {
                     #trait_path#trait_path_colon#macro_name!{SingleFieldStruct; #implementer_ident; #field_ident}
                 }
