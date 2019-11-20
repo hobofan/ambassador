@@ -45,6 +45,19 @@ impl Shout for Cat {
 pub struct WrappedCat(Cat);
 ```
 
+#### `#[delegate(..., target = "foo")]` - `target` key
+
+For structs with multiple fields, the field that should act as delgation target can be specified via the `target` key:
+
+```rust
+#[derive(Delegate)] // <-------
+#[delegate(Shout, target = "foo")] // <-------- Delegate implementation of Shout to struct field .foo
+pub struct WrappedCats {
+  foo: Cat,
+  bar: Cat,
+}
+```
+
 ### For remote traits: `#[delegatable_trait_remote]`
 
 If you want to make an existing trait that lives outside you crate available for delegation, you can do so by copy-pasting it's signature into your code and using the `#[delegatable_trait_remote]` attribute (see [full code sample](./ambassador/tests/run-pass/delegate_trait_remote_display.rs)):
@@ -142,7 +155,7 @@ pub fn main() {
 
 ### Delegate to struct field
 
-Delegating a trait implementation for a normal struct **(only single-field tuples supported for now)**
+Delegating a trait implementation for a normal struct
 
 ```rust
 use ambassador::{delegatable_trait, Delegate};
@@ -172,9 +185,18 @@ pub fn main() {
 }
 ```
 
+#### License
 
-## TODO:
+<sup>
+Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
+2.0</a> or <a href="LICENSE-MIT">MIT license</a> at your option.
+</sup>
 
-- [ ] attribute for `Delegate` to select delegation target for multi-field structs
-- [x] macro to allow for implementation of traits from external crates
-- [ ] Support for more complex traits (generics, associated consts, etc.)
+<br>
+
+<sub>
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
+be dual licensed as above, without any additional terms or conditions.
+</sub>
+
