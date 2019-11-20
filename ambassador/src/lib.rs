@@ -11,29 +11,28 @@ enum DelegateImplementer {
     MultiFieldStruct { field_idents: Vec<syn::Member> },
 }
 
-struct DelegateArgs {
-    trait_path_full: syn::Path,
+struct DelegateArgs<'a> {
+    trait_path_full: &'a syn::Path,
     target: Option<syn::Member>,
 }
 
-impl DelegateArgs {
-    pub fn from_meta(meta: &syn::Meta) -> Self {
+impl<'a> DelegateArgs<'a> {
+    pub fn from_meta(meta: &'a syn::Meta) -> Self {
         let meta_list = match meta {
             syn::Meta::List(meta_list) => meta_list,
             _ => panic!("Invalid syntax for delegate attribute"),
         };
 
-        let nested_meta_items: Vec<syn::Meta> = meta_list
+        let nested_meta_items: Vec<&syn::Meta> = meta_list
             .nested
-            .clone()
-            .into_iter()
+            .iter()
             .map(|n| match n {
                 syn::NestedMeta::Meta(meta) => meta,
                 _ => panic!("Invalid syntax for delegate attribute"),
             })
             .collect();
         let trait_path_full = match nested_meta_items[0] {
-            syn::Meta::Path(ref path) => path.clone(),
+            syn::Meta::Path(ref path) => path,
             _ => panic!(
                 "Invalid syntax for delegate attribute; First value has to be the Trait name"
             ),
@@ -73,68 +72,50 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
 
-    let delegate_attributes: Vec<syn::Attribute> = input
-        .clone()
+    let delegate_attributes: Vec<&syn::Attribute> = input
         .attrs
-        .into_iter()
+        .iter()
         .filter(|n| n.path.is_ident("delegate"))
         .collect();
-    if delegate_attributes.len() == 0 {
+    if delegate_attributes.is_empty() {
         panic!("No #[delegate] attribute specified. If you want to delegate an implementation of trait `SomeTrait` add the attribute:\n#[delegate(SomeTrait)]")
     }
 
-    let implementer_ident = input.ident.clone();
-    let implementer: Option<DelegateImplementer> = match input.clone().data {
+    let implementer_ident = input.ident;
+    let implementer: Option<DelegateImplementer> = match input.data {
         syn::Data::Enum(enum_data) => {
             let variant_idents = enum_data.variants.into_iter().map(|n| n.ident).collect();
             Some(DelegateImplementer::Enum { variant_idents })
         }
         syn::Data::Struct(struct_data) => match struct_data.fields {
-            syn::Fields::Unnamed(fields_unnamed) => {
-                match fields_unnamed.unnamed.into_iter().collect::<Vec<_>>().len() {
-                    1 => Some(DelegateImplementer::SingleFieldStruct {
-                        field_ident: syn::parse_quote! { 0 },
-                    }),
-                    _ => None,
+            syn::Fields::Unnamed(fields_unnamed) => match fields_unnamed.unnamed.len() {
+                1 => Some(DelegateImplementer::SingleFieldStruct {
+                    field_ident: syn::parse_quote! { 0 },
+                }),
+                _ => None,
+            },
+            syn::Fields::Named(fields_named) => match fields_named.named.len() {
+                1 => {
+                    let field_ident = fields_named.named[0].ident.as_ref().unwrap();
+                    Some(DelegateImplementer::SingleFieldStruct {
+                        field_ident: syn::parse_quote! { #field_ident },
+                    })
                 }
-            }
-            syn::Fields::Named(fields_named) => {
-                match fields_named
-                    .named
-                    .clone()
-                    .into_iter()
-                    .collect::<Vec<_>>()
-                    .len()
-                {
-                    0 => None,
-                    1 => {
-                        let field_ident = fields_named
-                            .named
-                            .into_iter()
-                            .next()
-                            .unwrap()
-                            .ident
-                            .unwrap();
-                        Some(DelegateImplementer::SingleFieldStruct {
-                            field_ident: syn::parse_quote! { #field_ident },
-                        })
-                    }
-                    _ => {
-                        let field_idents: Vec<_> = fields_named
-                            .named
-                            .into_iter()
-                            .map(|field| field.ident.unwrap())
-                            .map(|field_ident| syn::parse_quote! { #field_ident })
-                            .collect();
-                        Some(DelegateImplementer::MultiFieldStruct { field_idents })
-                    }
+                _ => {
+                    let field_idents: Vec<_> = fields_named
+                        .named
+                        .into_iter()
+                        .map(|field| field.ident.unwrap())
+                        .map(|field_ident| syn::parse_quote! { #field_ident })
+                        .collect();
+                    Some(DelegateImplementer::MultiFieldStruct { field_idents })
                 }
-            }
+            },
             _ => None,
         },
         _ => None,
     };
-    if let None = implementer {
+    if implementer.is_none() {
         panic!(
             "ambassador currently only supports #[derive(Delegate)] for: \n\
              - single-field enums\n\
@@ -146,31 +127,26 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
     let mut impl_macros = vec![];
 
     for delegate_attr in delegate_attributes {
-        let args = DelegateArgs::from_meta(&delegate_attr.parse_meta().unwrap());
+        let meta = delegate_attr.parse_meta().unwrap();
+        let args = DelegateArgs::from_meta(&meta);
         let trait_path_full: syn::Path = args.trait_path_full.clone();
-        let trait_ident: syn::Ident = trait_path_full
-            .segments
-            .clone()
-            .into_iter()
-            .last()
-            .unwrap()
-            .ident;
+        let trait_ident: &syn::Ident = &trait_path_full.segments.last().unwrap().ident;
 
-        let (trait_path, trait_path_colon) = build_invocation_path(trait_path_full);
+        let (trait_path, trait_path_colon) = build_invocation_path(&trait_path_full);
         let macro_name: syn::Ident = quote::format_ident!("ambassador_impl_{}", trait_ident);
 
-        let impl_macro = match implementer.clone() {
-            DelegateImplementer::Enum { variant_idents } => {
+        let impl_macro = match implementer {
+            DelegateImplementer::Enum { ref variant_idents } => {
                 quote! {
                     #trait_path#trait_path_colon#macro_name!{Enum; #implementer_ident; #(#implementer_ident::#variant_idents),*}
                 }
             }
-            DelegateImplementer::SingleFieldStruct { field_ident } => {
+            DelegateImplementer::SingleFieldStruct { ref field_ident } => {
                 quote! {
                     #trait_path#trait_path_colon#macro_name!{SingleFieldStruct; #implementer_ident; #field_ident}
                 }
             }
-            DelegateImplementer::MultiFieldStruct { field_idents } => {
+            DelegateImplementer::MultiFieldStruct { ref field_idents } => {
                 if args.target.is_none() {
                     panic!("\"target\" value on #[delegate] attribute has to be specified for structs with multiple fields");
                 }
@@ -205,15 +181,15 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 /// Macros are always imported from the crate root
 ///
 /// (None, None) -> ""
-/// (Some(...), Some(...)) -> "foo_crate::"
+/// (Some(...), Some(...)) -> "`foo_crate`::"
 fn build_invocation_path(
-    trait_path_full: syn::Path,
+    trait_path_full: &syn::Path,
 ) -> (Option<syn::Path>, Option<syn::token::Colon2>) {
-    let trait_path: Vec<syn::PathSegment> = trait_path_full
+    let to_take = trait_path_full.segments.len() - 1;
+    let trait_path: Vec<&syn::PathSegment> = trait_path_full
         .segments
-        .clone()
-        .into_iter()
-        .take(usize::max(trait_path_full.segments.len() - 1, 0))
+        .iter()
+        .take(usize::max(to_take, 0))
         .collect();
     let trait_path_str = trait_path
         .into_iter()
@@ -235,7 +211,7 @@ fn build_invocation_path(
 #[proc_macro_attribute]
 pub fn delegatable_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let original_item: syn::ItemTrait = syn::parse(item).unwrap();
-    let register_trait = build_register_trait(original_item.clone());
+    let register_trait = build_register_trait(&original_item);
 
     let expanded = quote! {
         #original_item
@@ -248,7 +224,7 @@ pub fn delegatable_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn delegatable_trait_remote(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let original_item: syn::ItemTrait = syn::parse(item).unwrap();
-    let register_trait = build_register_trait(original_item.clone());
+    let register_trait = build_register_trait(&original_item);
 
     let expanded = quote! {
         #register_trait
@@ -256,22 +232,21 @@ pub fn delegatable_trait_remote(_attr: TokenStream, item: TokenStream) -> TokenS
     TokenStream::from(expanded)
 }
 
-fn build_register_trait(original_item: syn::ItemTrait) -> proc_macro2::TokenStream {
-    let trait_ident = original_item.ident.clone();
+fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::TokenStream {
+    let trait_ident = &original_item.ident;
     let macro_name: syn::Ident = quote::format_ident!("ambassador_impl_{}", trait_ident);
 
-    let original_trait_methods: Vec<syn::TraitItemMethod> = original_item
+    let original_trait_methods: Vec<&syn::TraitItemMethod> = original_item
         .items
-        .clone()
-        .into_iter()
+        .iter()
         .map(|n| match n {
             syn::TraitItem::Method(method) => method,
             _ => unimplemented!(),
         })
         .collect();
 
-    let enum_trait_methods = build_enum_trait_methods(original_trait_methods.clone());
-    let single_field_struct_methods = build_single_field_struct_methods(original_trait_methods);
+    let enum_trait_methods = build_enum_trait_methods(&*original_trait_methods);
+    let single_field_struct_methods = build_single_field_struct_methods(&*original_trait_methods);
 
     let register_trait = quote! {
         #[macro_export]
@@ -293,12 +268,12 @@ fn build_register_trait(original_item: syn::ItemTrait) -> proc_macro2::TokenStre
 }
 
 fn build_enum_trait_methods(
-    original_trait_methods: Vec<syn::TraitItemMethod>,
+    original_trait_methods: &[&syn::TraitItemMethod],
 ) -> Vec<proc_macro2::TokenStream> {
     let mut enum_trait_methods = vec![];
     for original_method in original_trait_methods {
-        let method_sig = original_method.sig.clone();
-        let method_invocation = build_method_invocation(original_method, quote!(inner));
+        let method_sig = &original_method.sig;
+        let method_invocation = build_method_invocation(&original_method, &quote!(inner));
 
         let method_impl = quote! {
             #method_sig {
@@ -313,12 +288,13 @@ fn build_enum_trait_methods(
 }
 
 fn build_single_field_struct_methods(
-    original_trait_methods: Vec<syn::TraitItemMethod>,
+    original_trait_methods: &[&syn::TraitItemMethod],
 ) -> Vec<proc_macro2::TokenStream> {
     let mut enum_trait_methods = vec![];
     for original_method in original_trait_methods {
-        let method_sig = original_method.sig.clone();
-        let method_invocation = build_method_invocation(original_method, quote!(self.$field_ident));
+        let method_sig = &original_method.sig;
+        let method_invocation =
+            build_method_invocation(original_method, &quote!(self.$field_ident));
 
         let method_impl = quote! {
             #method_sig {
@@ -331,20 +307,18 @@ fn build_single_field_struct_methods(
 }
 
 fn build_method_invocation(
-    original_method: syn::TraitItemMethod,
-    field_ident: proc_macro2::TokenStream,
+    original_method: &syn::TraitItemMethod,
+    field_ident: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
-    let method_sig = original_method.sig.clone();
-    let method_ident = method_sig.ident.clone();
-    let argument_list: syn::punctuated::Punctuated<syn::Pat, syn::token::Comma> = method_sig
+    let method_sig = &original_method.sig;
+    let method_ident = &method_sig.ident;
+    let argument_list: syn::punctuated::Punctuated<&Box<syn::Pat>, syn::token::Comma> = method_sig
         .inputs
-        .clone()
-        .into_iter()
+        .iter()
         .filter_map(|fn_arg| match fn_arg {
             syn::FnArg::Receiver(_) => None,
-            syn::FnArg::Typed(pat_type) => Some(pat_type),
+            syn::FnArg::Typed(pat_type) => Some(&pat_type.pat),
         })
-        .map(|pat_type| *pat_type.pat.to_owned())
         .collect();
 
     let method_invocation = quote! { #field_ident.#method_ident(#argument_list) };
