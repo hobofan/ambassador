@@ -58,6 +58,15 @@ pub struct WrappedCats {
 }
 ```
 
+This also works for tuple structs with multiple fields, by using their index as a target key:
+
+```rust
+#[derive(Delegate)]
+#[delegate(Shout, target = "1")] // <-------- Delegate implementation of Shout to second field of type Dog
+pub struct WrappedAnimals(Cat, Dog);
+```
+
+
 ### For remote traits: `#[delegatable_trait_remote]`
 
 If you want to make an existing trait that lives outside you crate available for delegation, you can do so by copy-pasting it's signature into your code and using the `#[delegatable_trait_remote]` attribute (see [full code sample](./ambassador/tests/run-pass/delegate_trait_remote_display.rs)):

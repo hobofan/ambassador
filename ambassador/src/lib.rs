@@ -46,7 +46,7 @@ impl<'a> DelegateArgs<'a> {
                         match name_value.lit {
                         syn::Lit::Str(ref lit) => {
                             let target_val: syn::Member = lit.parse().expect("Invalid syntax for delegate attribute; Expected ident as value for \"target\"");
-                            if !target.is_none() {
+                            if target.is_some() {
                                 panic!("\"target\" value for delegate attribute can only be specified once");
                             }
 
@@ -92,7 +92,16 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                 1 => Some(DelegateImplementer::SingleFieldStruct {
                     field_ident: syn::parse_quote! { 0 },
                 }),
-                _ => None,
+                _ => {
+                    let field_idents: Vec<_> = fields_unnamed
+                        .unnamed
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, _)| i)
+                        .map(|i| syn::parse_str(&i.to_string()).unwrap())
+                        .collect();
+                    Some(DelegateImplementer::MultiFieldStruct { field_idents })
+                }
             },
             syn::Fields::Named(fields_named) => match fields_named.named.len() {
                 1 => {
@@ -119,7 +128,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
         panic!(
             "ambassador currently only supports #[derive(Delegate)] for: \n\
              - single-field enums\n\
-             - single field (tuple) structs"
+             - (tuple) structs"
         )
     }
     let implementer = implementer.unwrap();
@@ -155,7 +164,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                     .iter()
                     .find(|n| **n == args.target.clone().unwrap());
                 if field_ident.is_none() {
-                    panic!("Unknown field \"{}\" specified as \"target\" value in #[delegate] attribute");
+                    panic!("Unknown field \"{:?}\" specified as \"target\" value in #[delegate] attribute");
                 }
                 let field_ident = field_ident.unwrap();
 
