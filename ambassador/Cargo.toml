@@ -19,3 +19,8 @@ proc-macro2 = "1.0.6"
 
 [dev-dependencies]
 compiletest_rs = { version = "0.3.25", features = [ "stable" ]}
+
+[package.metadata.release]
+no-dev-version = true
+tag-prefix = ""
+tag-name = "{{version}}"
