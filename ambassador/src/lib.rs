@@ -2,13 +2,22 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{parse_macro_input, DeriveInput, Generics};
 
 #[derive(Clone, Debug)]
 enum DelegateImplementer {
-    Enum { variant_idents: Vec<syn::Ident> },
-    SingleFieldStruct { field_ident: syn::Member },
-    MultiFieldStruct { field_idents: Vec<syn::Member> },
+    Enum {
+        variant_idents: Vec<syn::Ident>,
+        generics: Generics,
+    },
+    SingleFieldStruct {
+        field_ident: syn::Member,
+        generics: Generics,
+    },
+    MultiFieldStruct {
+        field_idents: Vec<syn::Member>,
+        generics: Generics,
+    },
 }
 
 struct DelegateArgs<'a> {
@@ -82,15 +91,20 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
     }
 
     let implementer_ident = input.ident;
+    let generics = input.generics;
     let implementer: Option<DelegateImplementer> = match input.data {
         syn::Data::Enum(enum_data) => {
             let variant_idents = enum_data.variants.into_iter().map(|n| n.ident).collect();
-            Some(DelegateImplementer::Enum { variant_idents })
+            Some(DelegateImplementer::Enum {
+                variant_idents,
+                generics,
+            })
         }
         syn::Data::Struct(struct_data) => match struct_data.fields {
             syn::Fields::Unnamed(fields_unnamed) => match fields_unnamed.unnamed.len() {
                 1 => Some(DelegateImplementer::SingleFieldStruct {
                     field_ident: syn::parse_quote! { 0 },
+                    generics,
                 }),
                 _ => {
                     let field_idents: Vec<_> = fields_unnamed
@@ -100,7 +114,10 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                         .map(|(i, _)| i)
                         .map(|i| syn::parse_str(&i.to_string()).unwrap())
                         .collect();
-                    Some(DelegateImplementer::MultiFieldStruct { field_idents })
+                    Some(DelegateImplementer::MultiFieldStruct {
+                        field_idents,
+                        generics,
+                    })
                 }
             },
             syn::Fields::Named(fields_named) => match fields_named.named.len() {
@@ -108,6 +125,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                     let field_ident = fields_named.named[0].ident.as_ref().unwrap();
                     Some(DelegateImplementer::SingleFieldStruct {
                         field_ident: syn::parse_quote! { #field_ident },
+                        generics,
                     })
                 }
                 _ => {
@@ -117,7 +135,10 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                         .map(|field| field.ident.unwrap())
                         .map(|field_ident| syn::parse_quote! { #field_ident })
                         .collect();
-                    Some(DelegateImplementer::MultiFieldStruct { field_idents })
+                    Some(DelegateImplementer::MultiFieldStruct {
+                        field_idents,
+                        generics,
+                    })
                 }
             },
             _ => None,
@@ -142,20 +163,40 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
         let trait_ident: &syn::Ident = &trait_path_full.segments.last().unwrap().ident;
 
         let (trait_path, trait_path_colon) = build_invocation_path(&trait_path_full);
-        let macro_name: syn::Ident = quote::format_ident!("ambassador_impl_{}", trait_ident);
+        let macro_name_body_single_struct: syn::Ident =
+            quote::format_ident!("ambassador_impl_{}_body_single_struct", trait_ident);
+        let macro_name_body_enum: syn::Ident =
+            quote::format_ident!("ambassador_impl_{}_body_enum", trait_ident);
 
         let impl_macro = match implementer {
-            DelegateImplementer::Enum { ref variant_idents } => {
+            DelegateImplementer::Enum {
+                ref variant_idents,
+                ref generics,
+            } => {
+                let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
                 quote! {
-                    #trait_path#trait_path_colon#macro_name!{Enum; #implementer_ident; #(#implementer_ident::#variant_idents),*}
+                    impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
+                        #trait_path#trait_path_colon#macro_name_body_enum!{#(#implementer_ident::#variant_idents),*}
+                    }
                 }
             }
-            DelegateImplementer::SingleFieldStruct { ref field_ident } => {
+            DelegateImplementer::SingleFieldStruct {
+                ref field_ident,
+                ref generics,
+            } => {
+                let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
                 quote! {
-                    #trait_path#trait_path_colon#macro_name!{SingleFieldStruct; #implementer_ident; #field_ident}
+                    impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
+                        #trait_path#trait_path_colon#macro_name_body_single_struct!{#field_ident}
+                    }
                 }
             }
-            DelegateImplementer::MultiFieldStruct { ref field_idents } => {
+            DelegateImplementer::MultiFieldStruct {
+                ref field_idents,
+                ref generics,
+            } => {
                 if args.target.is_none() {
                     panic!("\"target\" value on #[delegate] attribute has to be specified for structs with multiple fields");
                 }
@@ -167,9 +208,12 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                     panic!("Unknown field \"{:?}\" specified as \"target\" value in #[delegate] attribute");
                 }
                 let field_ident = field_ident.unwrap();
+                let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
                 quote! {
-                    #trait_path#trait_path_colon#macro_name!{SingleFieldStruct; #implementer_ident; #field_ident}
+                    impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
+                        #trait_path#trait_path_colon#macro_name_body_single_struct!{#field_ident}
+                    }
                 }
             }
         };
@@ -243,7 +287,10 @@ pub fn delegatable_trait_remote(_attr: TokenStream, item: TokenStream) -> TokenS
 
 fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::TokenStream {
     let trait_ident = &original_item.ident;
-    let macro_name: syn::Ident = quote::format_ident!("ambassador_impl_{}", trait_ident);
+    let macro_name_body_single_struct: syn::Ident =
+        quote::format_ident!("ambassador_impl_{}_body_single_struct", trait_ident);
+    let macro_name_body_enum: syn::Ident =
+        quote::format_ident!("ambassador_impl_{}_body_enum", trait_ident);
 
     let original_trait_methods: Vec<&syn::TraitItemMethod> = original_item
         .items
@@ -259,17 +306,17 @@ fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::TokenStr
 
     let register_trait = quote! {
         #[macro_export]
-        macro_rules! #macro_name {
-            (Enum; $implementer:ty; $( $variants:path ),+) => {
-                impl #trait_ident for $implementer {
-                    #(#enum_trait_methods)*
-                }
-            };
-            (SingleFieldStruct; $implementer:ty; $field_ident:tt) => {
-                impl #trait_ident for $implementer {
-                    #(#single_field_struct_methods)*
-                }
-            };
+        macro_rules! #macro_name_body_single_struct {
+            ($field_ident:tt) => {
+                #(#single_field_struct_methods)*
+            }
+        }
+
+        #[macro_export]
+        macro_rules! #macro_name_body_enum {
+            ($( $variants:path ),+) => {
+                #(#enum_trait_methods)*
+            }
         }
     };
 
