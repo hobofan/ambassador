@@ -1,5 +1,19 @@
 # Ambassador - Delegate trait implementations via procedural macros
 
+<!-- Crates version -->
+<a href="https://crates.io/crates/ambassador">
+  <img src="https://img.shields.io/crates/v/ambassador.svg?style=flat-square"
+  alt="Crates.io version" />
+</a>
+<!-- docs.rs docs -->
+<a href="https://docs.rs/ambassador">
+  <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
+    alt="docs.rs docs" />
+</a>
+
+<br/>
+
+
 Delegating the implementation of traits to enum variants or fields of a struct normally requires a lot of boilerplate code. Ambassador is an attempt to eliminate that boilerplate by deriving the delegating trait implementation via procedural macros.
 
 **The minimum supported Rust version is 1.40.0.**
