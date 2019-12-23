@@ -76,6 +76,17 @@ impl<'a> DelegateArgs<'a> {
     }
 }
 
+struct PrettyTarget(syn::Member);
+
+impl std::fmt::Display for PrettyTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self.0 {
+            syn::Member::Named(ref ident) => write!(f, "{}", ident.to_string()),
+            syn::Member::Unnamed(ref index) => write!(f, "{}", index.index),
+        }
+    }
+}
+
 #[proc_macro_derive(Delegate, attributes(delegate))]
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
@@ -200,12 +211,11 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                 if args.target.is_none() {
                     panic!("\"target\" value on #[delegate] attribute has to be specified for structs with multiple fields");
                 }
+                let target = args.target.unwrap();
 
-                let field_ident = field_idents
-                    .iter()
-                    .find(|n| **n == args.target.clone().unwrap());
+                let field_ident = field_idents.iter().find(|n| **n == target);
                 if field_ident.is_none() {
-                    panic!("Unknown field \"{:?}\" specified as \"target\" value in #[delegate] attribute");
+                    panic!("Unknown field \"{}\" specified as \"target\" value in #[delegate] attribute", PrettyTarget(target));
                 }
                 let field_ident = field_ident.unwrap();
                 let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
