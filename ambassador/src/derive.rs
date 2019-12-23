@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput, Generics};
+use syn::{punctuated::Punctuated, token::Comma, WherePredicate};
 
 #[derive(Clone, Debug)]
 enum DelegateImplementer {
@@ -89,6 +90,7 @@ impl From<DeriveInput> for DelegateImplementer {
 struct DelegateArgs<'a> {
     trait_path_full: &'a syn::Path,
     target: Option<syn::Member>,
+    where_clauses: Vec<Punctuated<WherePredicate, Comma>>,
 }
 
 impl<'a> DelegateArgs<'a> {
@@ -114,21 +116,32 @@ impl<'a> DelegateArgs<'a> {
         };
 
         let mut target = None;
+        let mut where_clauses = Vec::new();
         for meta_item in nested_meta_items.iter().skip(1) {
             match meta_item {
                 syn::Meta::NameValue(name_value) => {
                     if name_value.path.is_ident("target") {
                         match name_value.lit {
-                        syn::Lit::Str(ref lit) => {
-                            let target_val: syn::Member = lit.parse().expect("Invalid syntax for delegate attribute; Expected ident as value for \"target\"");
-                            if target.is_some() {
-                                panic!("\"target\" value for delegate attribute can only be specified once");
-                            }
+                            syn::Lit::Str(ref lit) => {
+                                let target_val: syn::Member = lit.parse().expect("Invalid syntax for delegate attribute; Expected ident as value for \"target\"");
+                                if target.is_some() {
+                                    panic!("\"target\" value for delegate attribute can only be specified once");
+                                }
 
-                            target = Some(target_val);
+                                target = Some(target_val);
+                            }
+                            _ => panic!("Invalid syntax for delegate attribute; delegate attribute values have to be strings"),
                         }
-                        _ => panic!("Invalid syntax for delegate attribute; delegate attribute values have to be strings"),
                     }
+                    if name_value.path.is_ident("where") {
+                        match name_value.lit {
+                            syn::Lit::Str(ref lit) => {
+                                let where_clause_val = lit.parse_with(Punctuated::<WherePredicate, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected where clause syntax as value for \"where\"");
+
+                                where_clauses.push(where_clause_val);
+                            }
+                            _ => panic!("Invalid syntax for delegate attribute; delegate attribute values have to be strings"),
+                        }
                     }
                 }
                 _ => panic!("Invalid syntax for delegate attribute"),
@@ -138,6 +151,7 @@ impl<'a> DelegateArgs<'a> {
         Self {
             trait_path_full,
             target,
+            where_clauses,
         }
     }
 
@@ -157,6 +171,50 @@ impl<'a> DelegateArgs<'a> {
         }
         field_ident.unwrap()
     }
+
+    fn generics_for_impl(
+        &self,
+        implementer: &'a DelegateImplementer,
+    ) -> (
+        syn::ImplGenerics,
+        syn::TypeGenerics,
+        Option<syn::WhereClause>,
+    ) {
+        let generics = match implementer {
+            DelegateImplementer::Enum { ref generics, .. } => generics,
+            DelegateImplementer::SingleFieldStruct { ref generics, .. } => generics,
+            DelegateImplementer::MultiFieldStruct { ref generics, .. } => generics,
+        };
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+        // Merges the where clause based on the type generics with all the where clauses specified
+        // via "where" macro attributes.
+        let merge_where_clauses =
+            |type_where_clause: Option<&syn::WhereClause>,
+             explicit_where_clauses: &[Punctuated<WherePredicate, Comma>]| {
+                let clauses_iter = std::iter::empty()
+                    .chain(
+                        type_where_clause
+                            .map(|n| n.predicates.clone().into_iter())
+                            .into_iter()
+                            .flatten(),
+                    )
+                    .chain(
+                        explicit_where_clauses
+                            .iter()
+                            .map(|n| n.into_iter().cloned())
+                            .flatten(),
+                    );
+
+                syn::WhereClause {
+                    where_token: syn::Token![where](proc_macro2::Span::call_site()),
+                    predicates: clauses_iter.collect(),
+                }
+            };
+        let where_clause = Some(merge_where_clauses(where_clause, &self.where_clauses));
+
+        (impl_generics, ty_generics, where_clause)
+    }
 }
 
 struct PrettyTarget(syn::Member);
@@ -168,30 +226,6 @@ impl std::fmt::Display for PrettyTarget {
             syn::Member::Unnamed(ref index) => write!(f, "{}", index.index),
         }
     }
-}
-
-fn generics_for_impl(
-    implementer: &DelegateImplementer,
-) -> (
-    syn::ImplGenerics,
-    syn::TypeGenerics,
-    Option<&syn::WhereClause>,
-) {
-    let generics = match implementer {
-        DelegateImplementer::Enum {
-            ref generics,
-            variant_idents: _,
-        } => generics,
-        DelegateImplementer::SingleFieldStruct {
-            ref generics,
-            field_ident: _,
-        } => generics,
-        DelegateImplementer::MultiFieldStruct {
-            ref generics,
-            field_idents: _,
-        } => generics,
-    };
-    generics.split_for_impl()
 }
 
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
@@ -225,10 +259,10 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
         let impl_macro = match implementer {
             DelegateImplementer::Enum {
-                ref variant_idents,
-                generics: _,
+                ref variant_idents, ..
             } => {
-                let (impl_generics, ty_generics, where_clause) = generics_for_impl(&implementer);
+                let (impl_generics, ty_generics, where_clause) =
+                    args.generics_for_impl(&implementer);
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
@@ -237,10 +271,10 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                 }
             }
             DelegateImplementer::SingleFieldStruct {
-                ref field_ident,
-                generics: _,
+                ref field_ident, ..
             } => {
-                let (impl_generics, ty_generics, where_clause) = generics_for_impl(&implementer);
+                let (impl_generics, ty_generics, where_clause) =
+                    args.generics_for_impl(&implementer);
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
@@ -249,11 +283,11 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                 }
             }
             DelegateImplementer::MultiFieldStruct {
-                ref field_idents,
-                generics: _,
+                ref field_idents, ..
             } => {
                 let field_ident = args.get_field_ident(field_idents);
-                let (impl_generics, ty_generics, where_clause) = generics_for_impl(&implementer);
+                let (impl_generics, ty_generics, where_clause) =
+                    args.generics_for_impl(&implementer);
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {

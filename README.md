@@ -80,6 +80,18 @@ This also works for tuple structs with multiple fields, by using their index as 
 pub struct WrappedAnimals(Cat, Dog);
 ```
 
+#### `#[delegate(..., where = "A: Shout")]` - `where` key
+
+To make a delegation apply only for certain generic bounds, similar to a [native where clause](https://doc.rust-lang.org/stable/rust-by-example/generics/where.html), you can specify a `where` attribute:
+
+```rust
+#[derive(Delegate)]
+#[delegate(Shout, where = "A: Shout")] // <---- Delegate implementation of Shout to .foo field if foo field implements Shout
+pub struct WrappedFoo<A> {
+  foo: A,
+}
+```
+
 
 ### For remote traits: `#[delegatable_trait_remote]`
 
