@@ -24,7 +24,7 @@ impl Shout for Dog {
 }
 
 #[derive(Delegate)]
-#[delegate(Shout, target = "bar")]
+#[delegate(Shout)]
 pub enum Either<A: Shout, B: Shout> {
     Left(A),
     Right(B),
