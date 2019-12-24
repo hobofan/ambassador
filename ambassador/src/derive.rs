@@ -261,6 +261,11 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
             DelegateImplementer::Enum {
                 ref variant_idents, ..
             } => {
+                if args.target.is_some() {
+                    panic!(
+                        "\"target\" value on #[delegate] attribute can not be specified for enums"
+                    );
+                }
                 let (impl_generics, ty_generics, where_clause) =
                     args.generics_for_impl(&implementer);
 
@@ -273,6 +278,9 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
             DelegateImplementer::SingleFieldStruct {
                 ref field_ident, ..
             } => {
+                if args.target.is_some() {
+                    panic!("\"target\" value on #[delegate] attribute can not be specified for structs with a single field");
+                }
                 let (impl_generics, ty_generics, where_clause) =
                     args.generics_for_impl(&implementer);
 
