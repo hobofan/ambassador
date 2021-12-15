@@ -2,10 +2,8 @@ use quote::quote;
 
 pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::TokenStream {
     let trait_ident = &original_item.ident;
-    let macro_name_body_single_struct: syn::Ident =
-        quote::format_ident!("ambassador_impl_{}_body_single_struct", trait_ident);
-    let macro_name_body_enum: syn::Ident =
-        quote::format_ident!("ambassador_impl_{}_body_enum", trait_ident);
+    let macro_name: syn::Ident =
+        quote::format_ident!("ambassador_impl_{}", trait_ident);
 
     let original_trait_methods: Vec<&syn::TraitItemMethod> = original_item
         .items
@@ -20,16 +18,13 @@ pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::Toke
     let single_field_struct_methods = build_single_field_struct_methods(&*original_trait_methods);
 
     let register_trait = quote! {
+        #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
         #[macro_export]
-        macro_rules! #macro_name_body_single_struct {
-            ($field_ident:tt) => {
+        macro_rules! #macro_name {
+            (body_single_struct($field_ident:tt)) => {
                 #(#single_field_struct_methods)*
-            }
-        }
-
-        #[macro_export]
-        macro_rules! #macro_name_body_enum {
-            ($( $variants:path ),+) => {
+            };
+            (body_enum($( $variants:path ),+)) => {
                 #(#enum_trait_methods)*
             }
         }

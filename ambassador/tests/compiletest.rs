@@ -8,7 +8,7 @@ fn run_mode(mode: &'static str) {
     config.mode = mode.parse().expect("Invalid mode");
     config.target_rustcflags = Some("-L ../target/debug/deps".to_owned());
     config.src_base = PathBuf::from(format!("tests/{}", mode));
-    config.link_deps(); // Populate config.target_rustcflags with dependencies on the path
+    //config.link_deps(); // Populate config.target_rustcflags with dependencies on the path
 
     config.clean_rmeta(); // If your tests import the parent crate, this helps with E0464
 
@@ -16,7 +16,11 @@ fn run_mode(mode: &'static str) {
 }
 
 #[test]
-fn compile_test() {
-    run_mode("compile-fail");
+fn run_pass() {
     run_mode("run-pass");
+}
+
+#[test]
+fn compile_fail() {
+    run_mode("compile-fail");
 }

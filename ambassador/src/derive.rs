@@ -252,10 +252,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
         let trait_ident: &syn::Ident = &trait_path_full.segments.last().unwrap().ident;
 
         let (trait_path, trait_path_colon) = build_invocation_path(&trait_path_full);
-        let macro_name_body_single_struct: syn::Ident =
-            quote::format_ident!("ambassador_impl_{}_body_single_struct", trait_ident);
-        let macro_name_body_enum: syn::Ident =
-            quote::format_ident!("ambassador_impl_{}_body_enum", trait_ident);
+        let macro_name: syn::Ident = quote::format_ident!("ambassador_impl_{}", trait_ident);
 
         let impl_macro = match implementer {
             DelegateImplementer::Enum {
@@ -271,7 +268,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name_body_enum!{#(#implementer_ident::#variant_idents),*}
+                        #trait_path#trait_path_colon#macro_name!{body_enum(#(#implementer_ident::#variant_idents),*)}
                     }
                 }
             }
@@ -286,7 +283,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name_body_single_struct!{#field_ident}
+                        #trait_path#trait_path_colon#macro_name!{body_single_struct(#field_ident)}
                     }
                 }
             }
@@ -299,7 +296,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name_body_single_struct!{#field_ident}
+                        #trait_path#trait_path_colon#macro_name!{body_single_struct(#field_ident)}
                     }
                 }
             }
