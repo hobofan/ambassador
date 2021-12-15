@@ -7,7 +7,8 @@ use syn::{punctuated::Punctuated, token::Comma, WherePredicate};
 enum DelegateImplementer {
     Enum {
         variant_idents: Vec<syn::Ident>,
-        variant_types: Vec<syn::Type>,
+        first_type: syn::Type,
+        other_types: Vec<syn::Type>,
         generics: Generics,
     },
     SingleFieldStruct {
@@ -21,26 +22,34 @@ enum DelegateImplementer {
     },
 }
 
-
-
 impl From<DeriveInput> for DelegateImplementer {
     fn from(input: DeriveInput) -> Self {
         let generics = input.generics;
         let implementer: DelegateImplementer = match input.data {
             syn::Data::Enum(enum_data) => {
-                let (variant_idents, variant_types) = enum_data.variants.into_iter().map(|n| {
-                    let mut it = n.fields.into_iter();
-                    match it.next() {
-                        None => panic!("enum variant {} has no fields", n.ident),
-                        Some(f) => {
-                            if it.count() != 0 {
-                                panic!("enum variant {} has multiple fields", n.ident)
-                            };
-                            (n.ident, f.ty)
+                let (variant_idents, mut variant_types) = enum_data
+                    .variants
+                    .into_iter()
+                    .map(|n| {
+                        let mut it = n.fields.into_iter();
+                        match it.next() {
+                            None => panic!("enum variant {} has no fields", n.ident),
+                            Some(f) => {
+                                if it.count() != 0 {
+                                    panic!("enum variant {} has multiple fields", n.ident)
+                                };
+                                (n.ident, f.ty)
+                            }
                         }
-                    }
-                }).unzip();
-                DelegateImplementer::Enum {variant_idents, variant_types, generics,}
+                    })
+                    .unzip::<_,_,Vec<_>, Vec<_>>();
+                let first_type = variant_types.pop().expect("enum has no variants");
+                DelegateImplementer::Enum {
+                    variant_idents,
+                    first_type,
+                    other_types: variant_types,
+                    generics,
+                }
             }
             syn::Data::Struct(struct_data) => match struct_data.fields.len() {
                 0 => panic!("struct has no fields"),
@@ -48,20 +57,25 @@ impl From<DeriveInput> for DelegateImplementer {
                     let field = struct_data.fields.into_iter().next().unwrap();
                     let field_ident = match field.ident {
                         Some(id) => syn::Member::Named(id),
-                        None => syn::Member::Unnamed(0.into())
+                        None => syn::Member::Unnamed(0.into()),
                     };
-                    DelegateImplementer::SingleFieldStruct { field_ident, field_type: field.ty, generics,}
+                    DelegateImplementer::SingleFieldStruct {
+                        field_ident,
+                        field_type: field.ty,
+                        generics,
+                    }
                 }
                 _ => {
-                    let fields = struct_data.fields
+                    let fields = struct_data
+                        .fields
                         .into_iter()
                         .enumerate()
                         .map(|(i, field)| match field.ident {
                             Some(id) => (syn::Member::Named(id), field.ty),
-                            None => (syn::Member::Unnamed(i.into()), field.ty)
+                            None => (syn::Member::Unnamed(i.into()), field.ty),
                         })
                         .collect();
-                    DelegateImplementer::MultiFieldStruct {fields, generics,}
+                    DelegateImplementer::MultiFieldStruct { fields, generics }
                 }
             },
             _ => panic!(
@@ -143,7 +157,10 @@ impl<'a> DelegateArgs<'a> {
     }
 
     /// Select the correct field_ident based on the `target`.
-    pub fn get_field(&self, field_idents: &'a [(syn::Member, syn::Type)]) -> &'a (syn::Member, syn::Type) {
+    pub fn get_field(
+        &self,
+        field_idents: &'a [(syn::Member, syn::Type)],
+    ) -> &'a (syn::Member, syn::Type) {
         if self.target.is_none() {
             panic!("\"target\" value on #[delegate] attribute has to be specified for structs with multiple fields");
         }
@@ -243,7 +260,10 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
         let impl_macro = match &implementer {
             DelegateImplementer::Enum {
-                variant_idents, variant_types, ..
+                variant_idents,
+                first_type,
+                other_types,
+                ..
             } => {
                 if args.target.is_some() {
                     panic!(
@@ -252,16 +272,16 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                 }
                 let (impl_generics, ty_generics, where_clause) =
                     args.generics_for_impl(&implementer);
-                let variant_type = &variant_types[0];
-
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name!{body_enum(#variant_type, #(#implementer_ident::#variant_idents),*)}
+                        #trait_path#trait_path_colon#macro_name!{body_enum(#first_type, (#(#other_types),*), (#(#implementer_ident::#variant_idents),*))}
                     }
                 }
             }
             DelegateImplementer::SingleFieldStruct {
-                field_ident, field_type,..
+                field_ident,
+                field_type,
+                ..
             } => {
                 if args.target.is_some() {
                     panic!("\"target\" value on #[delegate] attribute can not be specified for structs with a single field");
@@ -275,9 +295,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                     }
                 }
             }
-            DelegateImplementer::MultiFieldStruct {
-                fields, ..
-            } => {
+            DelegateImplementer::MultiFieldStruct { fields, .. } => {
                 let field = args.get_field(fields);
                 let field_ident = &field.0;
                 let field_type = &field.1;
