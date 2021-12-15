@@ -1,75 +1,76 @@
+use proc_macro2::Ident;
 use quote::quote;
+use syn::{TraitItem, TraitItemConst, TraitItemType};
 
 pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::TokenStream {
     let trait_ident = &original_item.ident;
     let macro_name: syn::Ident =
         quote::format_ident!("ambassador_impl_{}", trait_ident);
 
-    let original_trait_methods: Vec<&syn::TraitItemMethod> = original_item
-        .items
-        .iter()
-        .map(|n| match n {
-            syn::TraitItem::Method(method) => method,
-            _ => unimplemented!(),
-        })
-        .collect();
 
-    let enum_trait_methods = build_enum_trait_methods(&*original_trait_methods);
-    let single_field_struct_methods = build_single_field_struct_methods(&*original_trait_methods);
+    let enum_items = build_trait_items(&*original_item.items, trait_ident, true);
+    let struct_items = build_trait_items(&*original_item.items, trait_ident, false);
 
     let register_trait = quote! {
         #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
         #[macro_export]
         macro_rules! #macro_name {
-            (body_single_struct($field_ident:tt)) => {
-                #(#single_field_struct_methods)*
+            (body_struct($ty:ty, $field_ident:tt)) => {
+                #(#struct_items)*
             };
-            (body_enum($( $variants:path ),+)) => {
-                #(#enum_trait_methods)*
+            (body_enum($ty:ty, $( $variants:path ),+)) => {
+                #(#enum_items)*
             }
         }
     };
-
     register_trait
 }
 
-fn build_enum_trait_methods(
-    original_trait_methods: &[&syn::TraitItemMethod],
+fn build_trait_items (
+    original_trait_methods: &[syn::TraitItem],
+    trait_ident: &Ident,
+    is_enum: bool,
 ) -> Vec<proc_macro2::TokenStream> {
-    let mut enum_trait_methods = vec![];
-    for original_method in original_trait_methods {
-        let method_sig = &original_method.sig;
-        let method_invocation = build_method_invocation(&original_method, &quote!(inner));
-
-        let method_impl = quote! {
-            #method_sig {
-                match self {
-                    $($variants(inner) => #method_invocation),*
+    let mut trait_items = vec![];
+    for original_item in original_trait_methods {
+        let item = match original_item {
+            TraitItem::Const(TraitItemConst{ident, ty, ..}) => {
+                quote! {
+                    const #ident : #ty = <$ty as #trait_ident>::#ident;
                 }
             }
-        };
-        enum_trait_methods.push(method_impl);
-    }
-    enum_trait_methods
-}
-
-fn build_single_field_struct_methods(
-    original_trait_methods: &[&syn::TraitItemMethod],
-) -> Vec<proc_macro2::TokenStream> {
-    let mut enum_trait_methods = vec![];
-    for original_method in original_trait_methods {
-        let method_sig = &original_method.sig;
-        let method_invocation =
-            build_method_invocation(original_method, &quote!(self.$field_ident));
-
-        let method_impl = quote! {
-            #method_sig {
-                #method_invocation
+            TraitItem::Type(TraitItemType{ident, generics, ..}) => {
+                quote! {
+                    type #ident #generics = <$ty as #trait_ident>::#ident #generics;
+                }
             }
+            TraitItem::Method(original_method) => {
+                let method_sig = &original_method.sig;
+                if is_enum {
+                    let method_invocation = build_method_invocation(&original_method, &quote!(inner));
+                    quote! {
+                        #method_sig {
+                            match self {
+                                $($variants(inner) => #method_invocation),*
+                            }
+                        }
+                    }
+                } else {
+                    let method_invocation =
+                        build_method_invocation(original_method, &quote!(self.$field_ident));
+                    quote! {
+                        #method_sig {
+                            #method_invocation
+                        }
+                    }
+                }
+            }
+            _ => unimplemented!()
         };
-        enum_trait_methods.push(method_impl);
+
+        trait_items.push(item);
     }
-    enum_trait_methods
+    trait_items
 }
 
 fn build_method_invocation(
