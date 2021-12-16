@@ -4,10 +4,14 @@ use syn::{TraitItem, TraitItemConst, TraitItemType};
 
 pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::TokenStream {
     let trait_ident = &original_item.ident;
+    let _macro_name: syn::Ident = quote::format_ident!("_ambassador_impl_{}", trait_ident);
     let macro_name: syn::Ident = quote::format_ident!("ambassador_impl_{}", trait_ident);
 
-    let (struct_items, enum_items): (Vec<_>, Vec<_>) =
-        original_item.items.iter().map(|item| build_trait_items(item, trait_ident)).unzip();
+    let (struct_items, enum_items): (Vec<_>, Vec<_>) = original_item
+        .items
+        .iter()
+        .map(|item| build_trait_items(item, trait_ident))
+        .unzip();
 
     let register_trait = quote! {
         #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]

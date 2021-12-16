@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Generics};
+use std::default::Default;
+use syn::{parse_macro_input, parse_quote, DeriveInput, Generics};
 use syn::{punctuated::Punctuated, token::Comma, WherePredicate};
 
 #[derive(Clone, Debug)]
@@ -42,7 +43,7 @@ impl From<DeriveInput> for DelegateImplementer {
                             }
                         }
                     })
-                    .unzip::<_,_,Vec<_>, Vec<_>>();
+                    .unzip::<_, _, Vec<_>, Vec<_>>();
                 let first_type = variant_types.pop().expect("enum has no variants");
                 DelegateImplementer::Enum {
                     variant_idents,
@@ -179,11 +180,8 @@ impl<'a> DelegateArgs<'a> {
     fn generics_for_impl(
         &self,
         implementer: &'a DelegateImplementer,
-    ) -> (
-        syn::ImplGenerics,
-        syn::TypeGenerics,
-        Option<syn::WhereClause>,
-    ) {
+        ty: &syn::Type,
+    ) -> (syn::ImplGenerics, syn::TypeGenerics, syn::WhereClause) {
         let generics = match implementer {
             DelegateImplementer::Enum { ref generics, .. } => generics,
             DelegateImplementer::SingleFieldStruct { ref generics, .. } => generics,
@@ -193,31 +191,27 @@ impl<'a> DelegateArgs<'a> {
 
         // Merges the where clause based on the type generics with all the where clauses specified
         // via "where" macro attributes.
-        let merge_where_clauses =
-            |type_where_clause: Option<&syn::WhereClause>,
-             explicit_where_clauses: &[Punctuated<WherePredicate, Comma>]| {
-                let clauses_iter = std::iter::empty()
-                    .chain(
-                        type_where_clause
-                            .map(|n| n.predicates.clone().into_iter())
-                            .into_iter()
-                            .flatten(),
-                    )
-                    .chain(
-                        explicit_where_clauses
-                            .iter()
-                            .map(|n| n.into_iter().cloned())
-                            .flatten(),
-                    );
+        let explicit_where_clauses = &*self.where_clauses;
+        let merged_where_clause = {
+            let clauses_iter = std::iter::empty()
+                .chain(where_clause.into_iter().flat_map(|n| n.predicates.clone()))
+                .chain({
+                    let trait_path = self.trait_path_full;
+                    std::iter::once(parse_quote!(#ty : #trait_path))
+                })
+                .chain(
+                    explicit_where_clauses
+                        .iter()
+                        .flat_map(|n| n.into_iter().cloned()),
+                );
 
-                syn::WhereClause {
-                    where_token: syn::Token![where](proc_macro2::Span::call_site()),
-                    predicates: clauses_iter.collect(),
-                }
-            };
-        let where_clause = Some(merge_where_clauses(where_clause, &self.where_clauses));
+            syn::WhereClause {
+                where_token: Default::default(),
+                predicates: clauses_iter.collect(),
+            }
+        };
 
-        (impl_generics, ty_generics, where_clause)
+        (impl_generics, ty_generics, merged_where_clause)
     }
 }
 
@@ -254,8 +248,6 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
         let args = DelegateArgs::from_meta(&meta);
         let trait_path_full: syn::Path = args.trait_path_full.clone();
         let trait_ident: &syn::Ident = &trait_path_full.segments.last().unwrap().ident;
-
-        let (trait_path, trait_path_colon) = build_invocation_path(&trait_path_full);
         let macro_name: syn::Ident = quote::format_ident!("ambassador_impl_{}", trait_ident);
 
         let impl_macro = match &implementer {
@@ -270,11 +262,16 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                         "\"target\" value on #[delegate] attribute can not be specified for enums"
                     );
                 }
-                let (impl_generics, ty_generics, where_clause) =
-                    args.generics_for_impl(&implementer);
+                let (impl_generics, ty_generics, mut where_clause) =
+                    args.generics_for_impl(&implementer, first_type);
+                where_clause.predicates.extend(
+                    other_types
+                        .into_iter()
+                        .map::<WherePredicate, _>(|arg| parse_quote!(#arg : #trait_path_full)),
+                );
                 quote! {
-                    impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name!{body_enum(#first_type, (#(#other_types),*), (#(#implementer_ident::#variant_idents),*))}
+                    impl #impl_generics #trait_path_full for #implementer_ident #ty_generics #where_clause {
+                        #macro_name!{body_enum(#first_type, (#(#other_types),*), (#(#implementer_ident::#variant_idents),*))}
                     }
                 }
             }
@@ -287,11 +284,11 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                     panic!("\"target\" value on #[delegate] attribute can not be specified for structs with a single field");
                 }
                 let (impl_generics, ty_generics, where_clause) =
-                    args.generics_for_impl(&implementer);
+                    args.generics_for_impl(&implementer, field_type);
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name!{body_struct(#field_type, #field_ident)}
+                        #macro_name!{body_struct(#field_type, #field_ident)}
                     }
                 }
             }
@@ -300,11 +297,11 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                 let field_ident = &field.0;
                 let field_type = &field.1;
                 let (impl_generics, ty_generics, where_clause) =
-                    args.generics_for_impl(&implementer);
+                    args.generics_for_impl(&implementer, field_type);
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name!{body_struct(#field_type, #field_ident)}
+                        #macro_name!{body_struct(#field_type, #field_ident)}
                     }
                 }
             }
@@ -319,36 +316,4 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
     // Hand the output tokens back to the compiler
     TokenStream::from(expanded)
-}
-
-/// Build the invocation path prefix for the macro invocation.
-///
-/// Macros are always imported from the crate root
-///
-/// (None, None) -> ""
-/// (Some(...), Some(...)) -> "`foo_crate`::"
-fn build_invocation_path(
-    trait_path_full: &syn::Path,
-) -> (Option<syn::Path>, Option<syn::token::Colon2>) {
-    let to_take = trait_path_full.segments.len() - 1;
-    let trait_path: Vec<&syn::PathSegment> = trait_path_full
-        .segments
-        .iter()
-        .take(usize::max(to_take, 0))
-        .collect();
-    let trait_path_str = trait_path
-        .into_iter()
-        .map(|n| n.ident.to_string())
-        .collect::<Vec<_>>()
-        .join("::");
-
-    let (trait_path, trait_path_colon): (Option<syn::Path>, Option<syn::token::Colon2>) =
-        match trait_path_str.as_ref() {
-            "" => (None, None),
-            _ => (
-                Some(syn::parse_str(&trait_path_str).unwrap()),
-                Some(syn::parse_quote!(::)),
-            ),
-        };
-    (trait_path, trait_path_colon)
 }
