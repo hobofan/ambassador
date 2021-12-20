@@ -271,7 +271,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                         use super::*;
                         #macro_name!{use_assoc_ty_bounds}
                         impl #impl_generics #trait_path_full for #implementer_ident #ty_generics #where_clause {
-                            #macro_name!{body_enum(#first_type, (#(#other_types),*), (#(#implementer_ident::#variant_idents),*))}
+                            #macro_name!{body_enum(<>, #first_type, (#(#other_types),*), (#(#implementer_ident::#variant_idents),*))}
                         }
                     }
                 }
@@ -289,7 +289,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #macro_name!{body_struct(#field_type, #field_ident)}
+                        #macro_name!{body_struct(<>, #field_type, #field_ident)}
                     }
                 }
             }
@@ -302,7 +302,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #macro_name!{body_struct(#field_type, #field_ident)}
+                        #macro_name!{body_struct(<>, #field_type, #field_ident)}
                     }
                 }
             }

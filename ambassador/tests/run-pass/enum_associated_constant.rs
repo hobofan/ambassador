@@ -1,6 +1,5 @@
 extern crate ambassador;
 
-use std::fmt::Display;
 use ambassador::*;
 
 #[delegatable_trait]
