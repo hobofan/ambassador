@@ -37,7 +37,7 @@ pub enum Either<A, B> {
     B(B),
 }
 
-#[test]
 pub fn main() {
     println!("{:?}", type_name::<<Either<Cat, Dog> as Animal>::Baby>());
+    //~^ ERROR type mismatch resolving `<Cat as Animal>::Baby == Puppy`
 }

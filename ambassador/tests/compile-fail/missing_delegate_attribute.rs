@@ -31,5 +31,5 @@ pub enum Animals {
 
 pub fn main() {
     let foo_animal = Animals::Cat(Cat);
-    println!("{}", foo_animal.shout("BAR"));
+    println!("{}", foo_animal.shout("BAR")); //~ ERROR no method named `shout` found for enum `Animals` in the current scope
 }

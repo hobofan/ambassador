@@ -1,9 +1,8 @@
 extern crate ambassador;
 
-use std::fmt::Display;
 use ambassador::*;
 
-#[delegatable_trait]
+#[delegatable_trait] //~ ERROR evaluation of constant value failed [E0080]
 pub trait Legs {
     const NUM_LEGS: usize;
 }
@@ -21,7 +20,7 @@ impl Legs for Bird {
 }
 
 #[derive(Delegate)]
-#[delegate(Legs)] //~ ERROR *
+#[delegate(Legs)]
 pub enum Pet {
     Cat(Cat),
     Bird(Bird),
@@ -30,5 +29,6 @@ pub enum Pet {
 
 
 fn main() {
-    println!("{}", Pet::NUM_LEGS)
+    println!("{}", Pet::NUM_LEGS) //~ ERROR erroneous constant used [const_err]
+    //~^ WARNING this was previously accepted by the compiler but is being phased out
 }
