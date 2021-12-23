@@ -1,32 +1,39 @@
 extern crate ambassador;
 
+use std::collections::{BTreeMap, HashMap};
 use ambassador::*;
 
 #[delegatable_trait]
-pub trait Legs {
-    const NUM_LEGS: usize;
+pub trait IntoMany<N> {
+    const N: usize;
 }
 
-pub struct Cat;
 
-impl Legs for Cat {
-    const NUM_LEGS: usize = 4;
+impl IntoMany<u8> for u32 {
+    const N: usize = 4;
 }
 
-pub struct Dog;
-
-impl Legs for Dog {
-    const NUM_LEGS: usize = 4;
+impl IntoMany<u16> for u32 {
+    const N: usize = 2;
 }
+
+impl IntoMany<u8> for u16 {
+    const N: usize = 2;
+}
+
+impl IntoMany<u8> for char {
+    const N: usize = 4;
+}
+
 
 #[derive(Delegate)]
-#[delegate(Legs)]
-pub enum Pet {
-    Cat(Cat),
-    Dog(Dog),
+#[delegate(IntoMany<X>)]
+pub enum CharOrU32 {
+    Char(char),
+    U32(u32),
 }
 
 
 fn main() {
-    println!("{}", Pet::NUM_LEGS)
+    assert_eq!( <CharOrU32 as IntoMany<u8>>::N, 4);
 }

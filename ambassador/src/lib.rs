@@ -2,6 +2,7 @@ extern crate proc_macro;
 
 mod derive;
 mod register;
+mod util;
 
 use proc_macro::TokenStream;
 use quote::quote;
