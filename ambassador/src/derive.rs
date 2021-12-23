@@ -277,7 +277,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                         .into_iter()
                         .map::<WherePredicate, _>(|arg| parse_quote!(#arg : #match_name<#trait_generics_p #first_type>)),
                 );
-                let mod_name = quote::format_ident!("ambassador_module_{}", trait_ident);
+                let mod_name = quote::format_ident!("ambassador_module_{}_for_{}", trait_ident, implementer_ident);
                 quote! {
                     #[allow(non_snake_case)]
                     mod #mod_name {
