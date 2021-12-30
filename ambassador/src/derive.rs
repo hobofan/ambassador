@@ -1,8 +1,9 @@
 use proc_macro::{TokenStream};
+use std::cmp::Ordering;
 use proc_macro2::{TokenStream as TokenStream2, TokenTree};
 use quote::{quote, ToTokens};
 use std::default::Default;
-use syn::{parse_macro_input, parse_quote, DeriveInput, Generics, PathArguments, GenericArgument, GenericParam, ImplGenerics, LitStr};
+use syn::{parse_macro_input, parse_quote, DeriveInput, Generics, PathArguments, GenericParam, ImplGenerics, LitStr};
 use syn::{punctuated::Punctuated, token::Comma, WherePredicate};
 use lazy_regex::regex_is_match;
 use itertools::Itertools;
@@ -206,7 +207,7 @@ impl std::fmt::Display for PrettyTarget {
     }
 }
 
-fn merge_generics(impl_generics: ImplGenerics, added_generics: impl Iterator<Item=GenericParam>) -> impl Iterator<Item=GenericParam> {
+fn merge_generics(impl_generics: ImplGenerics, added_generics: Vec<GenericParam>) -> impl Iterator<Item=GenericParam> {
     let tokens = impl_generics.into_token_stream();
     let impl_generics = if tokens.is_empty() {
         Punctuated::new()
@@ -216,6 +217,24 @@ fn merge_generics(impl_generics: ImplGenerics, added_generics: impl Iterator<Ite
     };
     // Make sure all lifetimes come first
     impl_generics.into_iter().merge_by(added_generics, |x, _| matches!(x, GenericParam::Lifetime(_)))
+}
+
+
+
+fn find_added_generics(ts: TokenStream2, dst: &mut Vec<GenericParam>) {
+    let mut iter = ts.into_iter().peekable();
+     match iter.peek() {
+        Some(TokenTree::Ident(id)) if regex_is_match!(r"X\d*", &id.to_string()) => dst.push(parse_quote!(#id)),
+         Some(TokenTree::Group(g)) => find_added_generics(g.stream(), dst),
+        _ => {}
+    };
+    iter.tuple_windows().for_each(|x| match x {
+        (_, TokenTree::Ident(id)) if regex_is_match!(r"X\d*", &id.to_string()) => dst.push(parse_quote!(#id)),
+        (TokenTree::Punct(p), TokenTree::Ident(id)) if regex_is_match!(r"x\d*", &id.to_string()) && p.as_char() == '\''
+        => dst.push(parse_quote!{#p #id}),
+        (_, TokenTree::Group(g)) => find_added_generics(g.stream(), dst),
+        _ => {}
+    })
 }
 
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
@@ -247,12 +266,13 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
             _ => panic!("cannot delegate to Fn* traits")
         };
         let trait_generics_p = super::util::TailingPunctuated::wrap_ref(trait_generics);
-        let added_generics = trait_generics.iter().filter_map::<GenericParam, _>(|x| match x {
-            GenericArgument::Lifetime(l) if regex_is_match!(r"x\d*", &l.ident.to_string())
-                => Some(parse_quote!(#l)),
-            GenericArgument::Type(t) if regex_is_match!(r"X\d*", &format!("{}", quote! (#t)))
-                => Some(parse_quote!(#t)),
-            _ => None
+        let mut added_generics = Vec::new();
+        trait_generics.iter().for_each(|x| find_added_generics(x.to_token_stream(), &mut added_generics));
+        added_generics.sort_unstable_by(|x, y| match (x, y) {
+            (GenericParam::Lifetime(_), GenericParam::Lifetime(_)) => Ordering::Equal,
+            (GenericParam::Lifetime(_), _) => Ordering::Less,
+            (_, GenericParam::Lifetime(_)) => Ordering::Greater,
+            _ => Ordering::Equal
         });
         let macro_name: syn::Ident = macro_name(trait_ident);
 
