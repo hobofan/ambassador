@@ -9,28 +9,32 @@ use lazy_regex::regex_is_match;
 use itertools::Itertools;
 use super::register::{macro_name, match_name};
 
-#[derive(Clone, Debug)]
-enum DelegateImplementer {
+#[derive(Debug)]
+struct DelegateImplementer {
+    generics: Generics,
+    ty: syn::Ident,
+    info: DelegateImplementerInfo,
+}
+
+#[derive(Debug)]
+enum DelegateImplementerInfo {
     Enum {
         variant_idents: Vec<syn::Ident>,
         first_type: syn::Type,
         other_types: Vec<syn::Type>,
-        generics: Generics,
     },
     SingleFieldStruct {
         field_ident: syn::Member,
         field_type: syn::Type,
-        generics: Generics,
     },
     MultiFieldStruct {
         fields: Vec<(syn::Member, syn::Type)>,
-        generics: Generics,
     },
 }
 
-impl DelegateImplementer {
-    fn new(data: syn::Data, generics: syn::Generics) -> Self {
-        let implementer: DelegateImplementer = match data {
+impl From<syn::Data> for DelegateImplementerInfo {
+    fn from(data: syn::Data) -> Self {
+        match data {
             syn::Data::Enum(enum_data) => {
                 let (variant_idents, mut variant_types) = enum_data
                     .variants
@@ -49,25 +53,22 @@ impl DelegateImplementer {
                     })
                     .unzip::<_, _, Vec<_>, Vec<_>>();
                 let first_type = variant_types.pop().expect("enum has no variants");
-                DelegateImplementer::Enum {
+                DelegateImplementerInfo::Enum {
                     variant_idents,
                     first_type,
                     other_types: variant_types,
-                    generics,
                 }
             }
             syn::Data::Struct(struct_data) => match struct_data.fields.len() {
-                0 => panic!("struct has no fields"),
                 1 => {
                     let field = struct_data.fields.into_iter().next().unwrap();
                     let field_ident = match field.ident {
                         Some(id) => syn::Member::Named(id),
                         None => syn::Member::Unnamed(0.into()),
                     };
-                    DelegateImplementer::SingleFieldStruct {
+                    DelegateImplementerInfo::SingleFieldStruct {
                         field_ident,
                         field_type: field.ty,
-                        generics,
                     }
                 }
                 _ => {
@@ -80,7 +81,7 @@ impl DelegateImplementer {
                             None => (syn::Member::Unnamed(i.into()), field.ty),
                         })
                         .collect();
-                    DelegateImplementer::MultiFieldStruct { fields, generics }
+                    DelegateImplementerInfo::MultiFieldStruct { fields }
                 }
             },
             _ => panic!(
@@ -88,13 +89,19 @@ impl DelegateImplementer {
                  - single-field enums\n\
                  - (tuple) structs"
             ),
-        };
-        implementer
+        }
     }
 }
 
+enum DelegateTarget {
+    Field(syn::Member),
+    None,
+    TrgSelf,
+}
+
+
 struct DelegateArgs {
-    target: Option<syn::Member>,
+    target: DelegateTarget,
     where_clauses: Punctuated<WherePredicate, Comma>,
 }
 
@@ -113,7 +120,7 @@ impl DelegateArgs {
         assert!(outer_iter.next().is_none(), "{}", INVALID_MSG);
         let path: TokenStream2 = iter.by_ref().take_while(|tt| !is_comma(tt)).collect();
         let path = parse_quote!{#path};
-        let mut target = None;
+        let mut target = DelegateTarget::None;
         let mut where_clauses = Punctuated::new();
         loop {
             match iter.next_tuple() {
@@ -122,11 +129,15 @@ impl DelegateArgs {
                     let lit: LitStr = parse_quote!(#val);
                     match &*key.to_string() {
                         "target" => {
-                            let target_val: syn::Member = lit.parse().expect("Invalid syntax for delegate attribute; Expected ident as value for \"target\"");
-                            if target.is_some() {
+                            if !matches!(target, DelegateTarget::None) {
                                 panic!("\"target\" value for delegate attribute can only be specified once");
                             }
-                            target = Some(target_val)
+                            target = if lit.value() == "self" {
+                                let target_val = lit.parse().expect("Invalid syntax for delegate attribute; Expected ident as value for \"target\"");
+                                DelegateTarget::Field(target_val)
+                            } else {
+                                DelegateTarget::TrgSelf
+                            };
                         }
                         "where" => {
                             let where_clause_val = lit.parse_with(Punctuated::<WherePredicate, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected where clause syntax as value for \"where\"");
@@ -175,11 +186,7 @@ impl DelegateArgs {
         implementer: &'a DelegateImplementer,
         ty: &syn::Type,
     ) -> (syn::ImplGenerics<'a>, syn::TypeGenerics<'a>, syn::WhereClause) {
-        let generics = match implementer {
-            DelegateImplementer::Enum { ref generics, .. } => generics,
-            DelegateImplementer::SingleFieldStruct { ref generics, .. } => generics,
-            DelegateImplementer::MultiFieldStruct { ref generics, .. } => generics,
-        };
+        let generics = &implementer.generics;
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
         // Merges the where clause based on the type generics with all the where clauses specified
@@ -240,8 +247,8 @@ fn find_added_generics(ts: TokenStream2, dst: &mut Vec<GenericParam>) {
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
-    let implementer = DelegateImplementer::new(input.data, input.generics);
-    let implementer_ident = input.ident;
+    let implementer = DelegateImplementer{info: input.data.into(), generics: input.generics, ty: input.ident};
+    let implementer_ident = &implementer.ty;
 
     let mut delegate_attributes = input
         .attrs
@@ -277,12 +284,11 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
         });
         let macro_name: syn::Ident = macro_name(trait_ident);
 
-        let impl_macro = match &implementer {
-            DelegateImplementer::Enum {
+        let impl_macro = match &implementer.info {
+            DelegateImplementerInfo::Enum {
                 variant_idents,
                 first_type,
                 other_types,
-                ..
             } => {
                 if args.target.is_some() {
                     panic!(
@@ -310,10 +316,9 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                     }
                 }
             }
-            DelegateImplementer::SingleFieldStruct {
+            DelegateImplementerInfo::SingleFieldStruct {
                 field_ident,
                 field_type,
-                ..
             } => {
                 if args.target.is_some() {
                     panic!("\"target\" value on #[delegate] attribute can not be specified for structs with a single field");
@@ -328,7 +333,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                     }
                 }
             }
-            DelegateImplementer::MultiFieldStruct { fields, .. } => {
+            DelegateImplementerInfo::MultiFieldStruct { fields } => {
                 let field = args.get_field(fields);
                 let field_ident = &field.0;
                 let field_type = &field.1;
