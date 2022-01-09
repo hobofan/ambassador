@@ -108,9 +108,9 @@ impl DelegateArgs {
         let mut outer_iter = tokens.into_iter();
         let mut iter= match outer_iter.next() {
             Some(TokenTree::Group(g)) => g.stream().into_iter(),
-            _ => panic!("1{}", INVALID_MSG)
+            _ => panic!("{}", INVALID_MSG)
         };
-        assert!(outer_iter.next().is_none(), "2{}", INVALID_MSG);
+        assert!(outer_iter.next().is_none(), "{}", INVALID_MSG);
         let path: TokenStream2 = iter.by_ref().take_while(|tt| !is_comma(tt)).collect();
         let path = parse_quote!{#path};
         let mut target = None;
@@ -133,17 +133,17 @@ impl DelegateArgs {
                             where_clauses.extend(where_clause_val);
                         }
                         _ => {
-                            panic!("3{} is not a valid key for a delegate attribute", key)
+                            panic!("{} is not a valid key for a delegate attribute", key)
                         }
                     }
                 }
-                Some(_) => panic!("4{}", INVALID_MSG),
+                Some(_) => panic!("{}", INVALID_MSG),
                 None => break // We might have looped around with a trailing comma
             }
             match iter.next() {
                 Some(p) if is_comma(&p) => continue, // comma go around again
                 None => break, // no comma so we're done
-                _ => panic!("6{}", INVALID_MSG)
+                _ => panic!("{}", INVALID_MSG)
             }
         }
         (path, Self{target, where_clauses})
