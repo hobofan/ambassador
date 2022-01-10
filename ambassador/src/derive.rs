@@ -265,6 +265,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
             PathArguments::AngleBracketed(seg) => &seg.args,
             _ => panic!("cannot delegate to Fn* traits")
         };
+        // Ensure there is a trailing comma
         let trait_generics_p = super::util::TailingPunctuated::wrap_ref(trait_generics);
         let mut added_generics = Vec::new();
         trait_generics.iter().for_each(|x| find_added_generics(x.to_token_stream(), &mut added_generics));
@@ -336,7 +337,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
                 let impl_generics = merge_generics(impl_generics, added_generics);
                 quote! {
                     impl <#(#impl_generics,)*> #trait_path_full for #implementer_ident #ty_generics #where_clause {
-                        #macro_name!{body_struct(<#trait_generics>, #field_type, #field_ident)}
+                        #macro_name!{body_struct(<#trait_generics_p>, #field_type, #field_ident)}
                     }
                 }
             }

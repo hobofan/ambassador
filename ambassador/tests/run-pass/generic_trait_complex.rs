@@ -17,11 +17,11 @@ impl<A: Display, B: Display> Shout<(A, B)> for Cat {
 }
 
 #[derive(Delegate)]
-#[delegate(Shout<(X1, &'x str)>)]
-pub struct WrappedCat(Cat);
+#[delegate(Shout<(X1, &'x str)>, target="0")]
+pub struct WrappedCat(Cat, ());
 
 
 fn main() {
-    let c = WrappedCat(Cat);
+    let c = WrappedCat(Cat, ());
     println!("{}", c.shout((5, "bar")))
 }
