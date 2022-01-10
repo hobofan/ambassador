@@ -80,6 +80,29 @@ This also works for tuple structs with multiple fields, by using their index as 
 pub struct WrappedAnimals(Cat, Dog);
 ```
 
+#### `#[delegate(..., target = "self")]` - `target="self"`
+Types that implement all the methods of a trait without implementing the trait itself,
+can be made to implement that trait by setting `target="self"`.
+This doesn't work for traits with associated types and constants, and requires the where clause to be added explicitly (see `where` key).
+If the type doesn't actually implement the methods (possibly due to an incomplete `where` clause) this can cause a `[unconditional_recursion]` error.
+
+A possible use case of this is when refactoring some methods of a public type into a trait,
+the type still needs to implement the methods outside the trait for semver reasons,
+and using this feature reduces the boilderplate of implementing the trait with the same methods.
+
+
+```rust
+#[derive(Delegate)]
+#[delegate(Shout, target="self")]
+pub struct Cat;
+
+impl Cat {
+    fn shout(&self, input: &str) -> String {
+        format!("{} - meow!", input)
+    }
+}
+```
+
 #### `#[delegate(..., where = "A: Shout")]` - `where` key
 
 To make a delegation apply only for certain generic bounds, similar to a [native where clause](https://doc.rust-lang.org/stable/rust-by-example/generics/where.html), you can specify a `where` attribute:

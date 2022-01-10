@@ -1,6 +1,10 @@
+use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream, TokenTree};
-use quote::{quote, TokenStreamExt, ToTokens};
-use syn::{ConstParam, GenericParam, ItemTrait, LifetimeDef, TraitItem, TraitItemConst, TraitItemType, TypeParam};
+use quote::{quote, ToTokens, TokenStreamExt};
+use syn::{
+    ConstParam, GenericParam, ItemTrait, LifetimeDef, TraitItem, TraitItemConst, TraitItemType,
+    TypeParam,
+};
 
 pub(crate) fn macro_name(trait_ident: &syn::Ident) -> syn::Ident {
     quote::format_ident!("ambassador_impl_{}", trait_ident)
@@ -14,14 +18,24 @@ pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::Toke
     let trait_ident = &original_item.ident;
     let macro_name = macro_name(trait_ident);
     let match_name = match_name(trait_ident);
-    let gen_idents: Vec<_> = original_item.generics.params.iter().map(param_to_ident).collect();
-    let gen_matcher: TokenStream = original_item.generics.params.iter().map(param_to_matcher).collect();
+    let gen_idents: Vec<_> = original_item
+        .generics
+        .params
+        .iter()
+        .map(param_to_ident)
+        .collect();
+    let gen_matcher: TokenStream = original_item
+        .generics
+        .params
+        .iter()
+        .map(param_to_matcher)
+        .collect();
 
-    let (struct_items, enum_items): (Vec<_>, Vec<_>) = original_item
+    let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) = original_item
         .items
         .iter()
         .map(|item| build_trait_items(item, trait_ident, &gen_idents))
-        .unzip();
+        .multiunzip();
 
     let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, &original_item, &match_name);
 
@@ -35,6 +49,9 @@ pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::Toke
             (body_enum(<#gen_matcher>, $ty:ty, ($( $other_tys:ty ),+), ($( $variants:path ),+))) => {
                 #(#enum_items)*
             };
+            (body_self(<#gen_matcher>)) => {
+                #(#self_items)*
+            };
             (use_assoc_ty_bounds) => {
                 #assoc_ty_bounds
             };
@@ -45,7 +62,7 @@ pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::Toke
     if cfg!(feature = "backward_compatible") {
         let enum_name = quote::format_ident!("{}_body_enum", macro_name);
         let struct_name = quote::format_ident!("{}_body_single_struct", macro_name);
-        let legacy_macros = quote!{
+        let legacy_macros = quote! {
             #[macro_export]
             macro_rules! #struct_name {
                 ($field_ident:tt) => {#macro_name!{body_struct(<>, (), $field_ident)}};
@@ -60,39 +77,44 @@ pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::Toke
     register_trait
 }
 
-fn param_to_ident(param: &GenericParam) -> &Ident{
+fn param_to_ident(param: &GenericParam) -> &Ident {
     match param {
-        GenericParam::Type(TypeParam{ident, ..}) => ident,
-        GenericParam::Lifetime(LifetimeDef{lifetime, ..}) => &lifetime.ident,
-        GenericParam::Const(ConstParam{ident, ..}) => ident
+        GenericParam::Type(TypeParam { ident, .. }) => ident,
+        GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => &lifetime.ident,
+        GenericParam::Const(ConstParam { ident, .. }) => ident,
     }
 }
 
-fn param_to_matcher(param: &GenericParam) -> TokenStream{
+fn param_to_matcher(param: &GenericParam) -> TokenStream {
     match param {
-        GenericParam::Type(TypeParam{ident, ..}) => quote!($ #ident : ty,),
-        GenericParam::Lifetime(LifetimeDef{lifetime, ..}) => {
+        GenericParam::Type(TypeParam { ident, .. }) => quote!($ #ident : ty,),
+        GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => {
             let ident = &lifetime.ident;
             quote!($ #ident : lifetime,)
-        },
-        GenericParam::Const(ConstParam{ident, ..}) => quote!($ #ident : ident,)
+        }
+        GenericParam::Const(ConstParam { ident, .. }) => quote!($ #ident : ident,),
     }
 }
 
-fn param_to_tokens(param: &GenericParam) -> proc_macro2::TokenStream{
+fn param_to_tokens(param: &GenericParam) -> proc_macro2::TokenStream {
     match param {
-        GenericParam::Type(TypeParam{ident, ..}) => quote!(#ident,),
-        GenericParam::Lifetime(LifetimeDef{lifetime, ..}) => quote!(#lifetime,),
-        GenericParam::Const(ConstParam{ident, ..}) => quote!(#ident,)
+        GenericParam::Type(TypeParam { ident, .. }) => quote!(#ident,),
+        GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => quote!(#lifetime,),
+        GenericParam::Const(ConstParam { ident, .. }) => quote!(#ident,),
     }
 }
 
-fn make_assoc_ty_bound(items: &[syn::TraitItem], item_trait: &ItemTrait, match_name: &Ident) -> proc_macro2::TokenStream {
+fn make_assoc_ty_bound(
+    items: &[syn::TraitItem],
+    item_trait: &ItemTrait,
+    match_name: &Ident,
+) -> proc_macro2::TokenStream {
     let trait_ident = &item_trait.ident;
     let gen_params = &item_trait.generics.params;
     let gen_params_t = super::util::TailingPunctuated::wrap_ref(gen_params);
 
-    let gen_tokens: proc_macro2::TokenStream = gen_params.iter().flat_map(param_to_tokens).collect();
+    let gen_tokens: proc_macro2::TokenStream =
+        gen_params.iter().flat_map(param_to_tokens).collect();
     let assoc_type_bounds: Vec<_> = items.iter()
         .filter_map(|item| match item {
             TraitItem::Type(ty) => {
@@ -104,7 +126,7 @@ fn make_assoc_ty_bound(items: &[syn::TraitItem], item_trait: &ItemTrait, match_n
             },
             _ => None,
         }).collect();
-    let new_bound =  quote! {#trait_ident<#gen_tokens #(#assoc_type_bounds,)*>};
+    let new_bound = quote! {#trait_ident<#gen_tokens #(#assoc_type_bounds,)*>};
 
     quote! {
         #[doc(hidden)]
@@ -121,11 +143,16 @@ fn replace_gen_idents(tokens: TokenStream, gen_idents: &[&Ident]) -> TokenStream
     let mut apostrophe: Option<proc_macro2::Punct> = None;
     for tt in tokens {
         match tt {
-            TokenTree::Group(g) =>
-                res.append(proc_macro2::Group::new(g.delimiter(), replace_gen_idents(g.stream(), gen_idents))),
+            TokenTree::Group(g) => res.append(proc_macro2::Group::new(
+                g.delimiter(),
+                replace_gen_idents(g.stream(), gen_idents),
+            )),
             TokenTree::Ident(ref id) if gen_idents.contains(&id) => {
                 apostrophe = None;
-                res.append(TokenTree::Punct(proc_macro2::Punct::new('$', proc_macro2::Spacing::Joint)));
+                res.append(TokenTree::Punct(proc_macro2::Punct::new(
+                    '$',
+                    proc_macro2::Spacing::Joint,
+                )));
                 res.append(tt)
             }
             TokenTree::Punct(p) if p.as_char() == '\'' => apostrophe = Some(p),
@@ -134,7 +161,7 @@ fn replace_gen_idents(tokens: TokenStream, gen_idents: &[&Ident]) -> TokenStream
                     res.append(ap);
                 }
                 res.append(tt)
-            },
+            }
         }
     }
     res
@@ -144,8 +171,15 @@ fn build_trait_items(
     original_item: &syn::TraitItem,
     trait_ident: &Ident,
     gen_idents: &[&Ident],
-) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
-    let gen_pat: TokenStream = gen_idents.into_iter().flat_map(|id| quote! {$#id,}).collect();
+) -> (
+    proc_macro2::TokenStream,
+    proc_macro2::TokenStream,
+    proc_macro2::TokenStream,
+) {
+    let gen_pat: TokenStream = gen_idents
+        .into_iter()
+        .flat_map(|id| quote! {$#id,})
+        .collect();
     match original_item {
         TraitItem::Const(TraitItemConst { ident, ty, .. }) => (
             quote! {
@@ -157,6 +191,7 @@ fn build_trait_items(
                     <$ty as #trait_ident<#gen_pat>>::#ident
                 };
             },
+            quote! {compile_error!("trg=\"self\" is not allowed with associated constants")},
         ),
         TraitItem::Type(TraitItemType {
             ident, generics, ..
@@ -166,7 +201,11 @@ fn build_trait_items(
                 type #ident #generics = <$ty as #trait_ident<#gen_pat>>::#ident #generics;
                 // TODO add #where_clase to appropriate place once it is decided
             };
-            (item.clone(), item)
+            (
+                item.clone(),
+                item,
+                quote! {compile_error!("trg=\"self\" is not allowed with associated types")},
+            )
         }
         TraitItem::Method(original_method) => {
             let method_sig = original_method.sig.to_token_stream();
@@ -189,6 +228,15 @@ fn build_trait_items(
                             match self {
                                 $($variants(inner) => #method_invocation),*
                             }
+                        }
+                    }
+                },
+                {
+                    let method_invocation = build_method_invocation(original_method, &quote!(self));
+                    quote! {
+                        #[deny(unconditional_recursion)]
+                        #method_sig {
+                            #method_invocation
                         }
                     }
                 },
