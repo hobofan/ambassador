@@ -161,7 +161,7 @@ fn build_trait_items(
         TraitItem::Type(TraitItemType {
             ident, generics, ..
         }) => {
-            let where_clause = &generics.where_clause;
+            let _where_clause = &generics.where_clause;
             let item = quote! {
                 type #ident #generics = <$ty as #trait_ident<#gen_pat>>::#ident #generics;
                 // TODO add #where_clase to appropriate place once it is decided
