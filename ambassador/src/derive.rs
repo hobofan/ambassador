@@ -324,7 +324,7 @@ fn delegate_single_atrr(
     let macro_name: syn::Ident = macro_name(trait_ident);
 
     let (impl_generics, ty_generics, mut where_clause) =
-        generics_for_impl(args.where_clauses, &implementer);
+        generics_for_impl(args.where_clauses, implementer);
     let impl_generics = merge_generics(impl_generics, added_generics);
     if matches!(&args.target, DelegateTarget::TrgSelf) {
         quote! {
@@ -348,7 +348,7 @@ fn delegate_single_atrr(
                 let match_name = match_name(trait_ident);
                 where_clause
                     .predicates
-                    .extend(other_types.into_iter().map::<WherePredicate, _>(
+                    .extend(other_types.iter().map::<WherePredicate, _>(
                         |arg| parse_quote!(#arg : #match_name<#trait_generics_p #first_type>),
                     ));
                 let mod_name = quote::format_ident!(

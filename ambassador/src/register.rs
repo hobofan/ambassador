@@ -37,7 +37,7 @@ pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::Toke
         .map(|item| build_trait_items(item, trait_ident, &gen_idents))
         .multiunzip();
 
-    let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, &original_item, &match_name);
+    let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, original_item, &match_name);
 
     let mut register_trait = quote! {
         #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
@@ -176,10 +176,7 @@ fn build_trait_items(
     proc_macro2::TokenStream,
     proc_macro2::TokenStream,
 ) {
-    let gen_pat: TokenStream = gen_idents
-        .into_iter()
-        .flat_map(|id| quote! {$#id,})
-        .collect();
+    let gen_pat: TokenStream = gen_idents.iter().flat_map(|id| quote! {$#id,}).collect();
     match original_item {
         TraitItem::Const(TraitItemConst { ident, ty, .. }) => (
             quote! {
