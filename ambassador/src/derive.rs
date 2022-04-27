@@ -223,7 +223,7 @@ struct PrettyTarget(syn::Member);
 impl std::fmt::Display for PrettyTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         match self.0 {
-            syn::Member::Named(ref ident) => write!(f, "{}", ident.to_string()),
+            syn::Member::Named(ref ident) => write!(f, "{}", ident),
             syn::Member::Unnamed(ref index) => write!(f, "{}", index.index),
         }
     }
