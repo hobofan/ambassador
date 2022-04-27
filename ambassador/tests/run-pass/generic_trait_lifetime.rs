@@ -17,7 +17,7 @@ impl<'a, E> Ref<'a> for &'a E {
 }
 
 #[derive(Delegate)]
-#[delegate(Ref<'x>)]
+#[delegate(Ref<'x>, generics = "'x")]
 struct WrapRef<'a, T>(&'a T);
 
 fn main() {
@@ -25,4 +25,3 @@ fn main() {
     let y = WrapRef(&x);
     assert_eq!(*y.deref(), 5)
 }
-

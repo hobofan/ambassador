@@ -1,7 +1,7 @@
 extern crate ambassador;
 
 use ambassador::{delegatable_trait, Delegate};
-use std::any::{type_name};
+use std::any::type_name;
 
 #[delegatable_trait]
 pub trait Taxonomy<E> {
@@ -45,19 +45,23 @@ impl Taxonomy<Kingdom> for Reptile {
 }
 
 impl<E: Base + Taxonomy<Class>> Taxonomy<Kingdom> for E
-    where <E as Taxonomy<Class>>::Res : Taxonomy<Kingdom> {
+where
+    <E as Taxonomy<Class>>::Res: Taxonomy<Kingdom>,
+{
     type Res = <<E as Taxonomy<Class>>::Res as Taxonomy<Kingdom>>::Res;
 }
 
-
 #[derive(Delegate)]
-#[delegate(Taxonomy<X>)]
+#[delegate(Taxonomy<X>, generics = "X")]
 pub enum Either<A, B> {
     A(A),
     B(B),
 }
 
 pub fn main() {
-    assert_eq!(type_name::<<Either<Cat, Alligator> as Taxonomy<Class>>::Res>(), type_name::<Mammal>());
-    //~^ ERROR type mismatch resolving `<Cat as Taxonomy<Class>>::Res == Reptile`
+    assert_eq!(
+        type_name::<<Either<Cat, Alligator> as Taxonomy<Class>>::Res>(),
+        //~^ ERROR type mismatch resolving `<Cat as Taxonomy<Class>>::Res == Reptile`
+        type_name::<Mammal>()
+    );
 }

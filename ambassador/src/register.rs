@@ -6,15 +6,15 @@ use syn::{
     TypeParam,
 };
 
-pub(crate) fn macro_name(trait_ident: &syn::Ident) -> syn::Ident {
+pub(crate) fn macro_name(trait_ident: &Ident) -> Ident {
     quote::format_ident!("ambassador_impl_{}", trait_ident)
 }
 
-pub(crate) fn match_name(trait_ident: &syn::Ident) -> syn::Ident {
+pub(crate) fn match_name(trait_ident: &Ident) -> Ident {
     quote::format_ident!("Match{}", trait_ident)
 }
 
-pub fn build_register_trait(original_item: &syn::ItemTrait) -> proc_macro2::TokenStream {
+pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
     let trait_ident = &original_item.ident;
     let macro_name = macro_name(trait_ident);
     let match_name = match_name(trait_ident);
@@ -96,7 +96,7 @@ fn param_to_matcher(param: &GenericParam) -> TokenStream {
     }
 }
 
-fn param_to_tokens(param: &GenericParam) -> proc_macro2::TokenStream {
+fn param_to_tokens(param: &GenericParam) -> TokenStream {
     match param {
         GenericParam::Type(TypeParam { ident, .. }) => quote!(#ident,),
         GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => quote!(#lifetime,),
@@ -105,16 +105,15 @@ fn param_to_tokens(param: &GenericParam) -> proc_macro2::TokenStream {
 }
 
 fn make_assoc_ty_bound(
-    items: &[syn::TraitItem],
+    items: &[TraitItem],
     item_trait: &ItemTrait,
     match_name: &Ident,
-) -> proc_macro2::TokenStream {
+) -> TokenStream {
     let trait_ident = &item_trait.ident;
     let gen_params = &item_trait.generics.params;
     let gen_params_t = super::util::TailingPunctuated::wrap_ref(gen_params);
 
-    let gen_tokens: proc_macro2::TokenStream =
-        gen_params.iter().flat_map(param_to_tokens).collect();
+    let gen_tokens: TokenStream = gen_params.iter().flat_map(param_to_tokens).collect();
     let assoc_type_bounds: Vec<_> = items.iter()
         .filter_map(|item| match item {
             TraitItem::Type(ty) => {
@@ -168,14 +167,10 @@ fn replace_gen_idents(tokens: TokenStream, gen_idents: &[&Ident]) -> TokenStream
 }
 
 fn build_trait_items(
-    original_item: &syn::TraitItem,
+    original_item: &TraitItem,
     trait_ident: &Ident,
     gen_idents: &[&Ident],
-) -> (
-    proc_macro2::TokenStream,
-    proc_macro2::TokenStream,
-    proc_macro2::TokenStream,
-) {
+) -> (TokenStream, TokenStream, TokenStream) {
     let gen_pat: TokenStream = gen_idents.iter().flat_map(|id| quote! {$#id,}).collect();
     match original_item {
         TraitItem::Const(TraitItemConst { ident, ty, .. }) => (
@@ -245,8 +240,8 @@ fn build_trait_items(
 
 fn build_method_invocation(
     original_method: &syn::TraitItemMethod,
-    field_ident: &proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
+    field_ident: &TokenStream,
+) -> TokenStream {
     let method_sig = &original_method.sig;
     let method_ident = &method_sig.ident;
     let argument_list: syn::punctuated::Punctuated<&Box<syn::Pat>, syn::token::Comma> = method_sig
