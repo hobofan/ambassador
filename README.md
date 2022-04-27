@@ -143,9 +143,9 @@ impl<T: Display> Shout<T> for Cat {
 }
 
 #[derive(Delegate)]
-#[delegate(Shout<X>)] // <-------- `X` signifies we want to be as generic as possible
+#[delegate(Shout<X>, generics = "X")] // <-------- X is fully generic
 // The automatic where clause ensures X: Display
-// We could also use #[delegate(Shout<& 'x str>)] to only delegate for &str
+// We could also use #[delegate(Shout<& 'a str>, generics = "'a")] to only delegate for &str
 pub struct WrappedCat(Cat);
 ```
 
