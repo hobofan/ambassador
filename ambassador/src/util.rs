@@ -24,15 +24,3 @@ where
         }
     }
 }
-
-// Copy of matches! to be compatible with 1.40
-macro_rules! my_matches {
-    ($expression:expr, $(|)? $( $pattern:pat_param )|+ $( if $guard: expr )? $(,)?) => {
-        match $expression {
-            $( $pattern )|+ $( if $guard )? => true,
-            _ => false
-        }
-    }
-}
-
-pub(crate) use my_matches;

@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{
@@ -30,16 +31,11 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         .map(param_to_matcher)
         .collect();
 
-    let (mut struct_items, mut enum_items, mut self_items) = (vec![], vec![], vec![]);
-    original_item
+    let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) = original_item
         .items
         .iter()
         .map(|item| build_trait_items(item, trait_ident, &gen_idents))
-        .for_each(|(st, en, se)| {
-            struct_items.push(st);
-            enum_items.push(en);
-            self_items.push(se);
-        });
+        .multiunzip();
 
     let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, original_item, &match_name);
 
