@@ -107,7 +107,7 @@ impl Cat {
 
 To make a delegation apply only for certain generic bounds, similar to a [native where clause](https://doc.rust-lang.org/stable/rust-by-example/generics/where.html), you can specify a `where` attribute:
 
-A where clause is automatically apply that makes sure the target field implements the trait being delegated
+A where clause is automatically applied that makes sure the target field implements the trait being delegated
 ```rust
 #[derive(Delegate)]
 #[delegate(Shout, where = "A: Debug")] // <---- Delegate implementation of Shout to .foo field if foo field implements Debug
