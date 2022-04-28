@@ -84,12 +84,46 @@ pub struct WrappedAnimals(Cat, Dog);
 
 To make a delegation apply only for certain generic bounds, similar to a [native where clause](https://doc.rust-lang.org/stable/rust-by-example/generics/where.html), you can specify a `where` attribute:
 
+A where clause is automatically apply that makes sure the target field implements the trait being delegated
 ```rust
 #[derive(Delegate)]
-#[delegate(Shout, where = "A: Shout")] // <---- Delegate implementation of Shout to .foo field if foo field implements Shout
+#[delegate(Shout, where = "A: Debug")] // <---- Delegate implementation of Shout to .foo field if foo field implements Debug
 pub struct WrappedFoo<A> {
   foo: A,
 }
+```
+
+
+#### `#[delegate(Shout<X>)]` - trait generics
+
+We can also delegate traits with generics.
+When doing this all instances of `X` and `'x` followed by arbitrary digits eg. `X0` `X12` `'x3` are treated as maximally generic.
+The automatically added where clause ensures they are valid for the inner type being delegated to.
+Explict where clauses to further refine these types can be added as normal.
+Specific types can be used instead of `X` to only derive for those.
+
+```rust
+use ambassador::{delegatable_trait, Delegate};
+use std::fmt::Display;
+
+#[delegatable_trait] // <-------
+pub trait Shout<T> {
+    fn shout(&self, input: T) -> String;
+}
+
+pub struct Cat;
+
+impl<T: Display> Shout<T> for Cat {
+    fn shout(&self, input: T) -> String {
+        format!("{} - meow!", input)
+    }
+}
+
+#[derive(Delegate)]
+#[delegate(Shout<X>)] // <-------- `X` signifies we want to be as generic as possible
+// The automatic where clause ensures X: Display
+// We could also use #[delegate(Shout<& 'x str>)] to only delegate for &str
+pub struct WrappedCat(Cat);
 ```
 
 

@@ -4,7 +4,6 @@ use ambassador::{delegatable_trait_remote, Delegate};
 use std::iter::IntoIterator;
 
 #[delegatable_trait_remote]
-#[stable(feature = "rust1", since = "1.0.0")]
 pub trait IntoIterator {
     type Item;
     type IntoIter: Iterator<Item = Self::Item>;
