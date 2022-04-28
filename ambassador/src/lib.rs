@@ -15,6 +15,11 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn delegate_remote(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    crate::derive::delegate_macro(input)
+}
+
+#[proc_macro_attribute]
 pub fn delegatable_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let original_item: syn::ItemTrait = syn::parse(item).unwrap();
     let register_trait = build_register_trait(&original_item);

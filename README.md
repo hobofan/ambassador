@@ -145,6 +145,34 @@ trait Display {
 pub struct WrappedCat(Cat);
 ```
 
+### For remote types `#[delegate_remote]`
+
+If you want to make an existing type that lives outside you crate delegate, you can do so by copy-pasting it's definition into your code and using the `#[delegate_remote]` attribute (see [full code sample](./ambassador/tests/run-pass/delegate_remote.rs)):
+
+If the type is a struct, not all the fields have to be public, only the ones being delegated to.
+
+```rust
+mod wrapped {
+    use super::*;
+    pub struct WrappedAnimals<A> {
+        pub foo: Cat,
+        pub bar: A,
+        baz: u32, // private field
+    }
+}
+
+use wrapped::*;
+
+#[delegate_remote]
+#[delegate(Shout, target = "bar")]
+struct WrappedAnimals<A: Shout> {
+    foo: Cat,
+    bar: A,
+    // We don't even have to include baz since we don't delegate to it
+}
+```
+
+Note: Because of the orphan rule `#[delegatable_trait_remote]` and `#[delegate_remote]` can't be combined
 
 ## Usage Examples
 
