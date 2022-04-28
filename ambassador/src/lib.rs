@@ -17,7 +17,7 @@
 //!
 //! Delegating the implementation of traits to enum variants or fields of a struct normally requires a lot of boilerplate code. Ambassador is an attempt to eliminate that boilerplate by deriving the delegating trait implementation via procedural macros.
 //!
-//! **The minimum supported Rust version is 1.40.0.**
+//! **The minimum supported Rust version is 1.52.0.**
 //!
 //! See individual macro documentation for detailed instructions.
 //!

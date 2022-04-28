@@ -10,7 +10,7 @@ jobs:
       matrix:
         rust:
           - stable
-          - 1.40.0
+          - 1.52.0
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
@@ -29,7 +29,7 @@ jobs:
       matrix:
         rust:
           - stable
-          - 1.40.0
+          - 1.52.0
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
