@@ -77,6 +77,17 @@
 //!     assert_eq!(my_map.get("a"), Some(&1));
 //! }
 //! ```
+//!
+//! # Backwards Compatibility
+//! Since delegateable traits from one crate can be used in anther crate backwards compatibility of switching to 0.3.x depends on the use case
+//! ## Self Contained Crate
+//! Switching to 0.3.x should just work,
+//! in this case it safe to disable the "backward_compatible" feature
+//! ## Library with public delegatable traits
+//! Make sure use the "backward_compatible" feature (enabled by default),
+//! this makes sure users of your library using an older version of ambassador aren't affected by the upgrade
+//! ## Users of a library with public delegatable traits
+//! Try to use the same version of ambassador as the library you're using
 
 extern crate proc_macro;
 
