@@ -1,4 +1,5 @@
 use super::register::{macro_name, match_name};
+use super::util::my_matches as matches;
 use itertools::Itertools;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2, TokenTree};
