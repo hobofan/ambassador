@@ -10,7 +10,7 @@ jobs:
       matrix:
         rust:
           - stable
-          - 1.40.0
+          - 1.53.0
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
@@ -28,8 +28,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - stable
-          - 1.40.0
+          - stable # It's useful to test applications of these macros to newer features so a 1.53 test doesn't work
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1

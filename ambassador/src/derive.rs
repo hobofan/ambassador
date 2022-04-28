@@ -1,8 +1,7 @@
 use super::register::{macro_name, match_name};
 use itertools::Itertools;
-use lazy_regex::regex_is_match;
 use proc_macro::TokenStream;
-use proc_macro2::{TokenStream as TokenStream2, TokenTree};
+use proc_macro2::{Ident, TokenStream as TokenStream2, TokenTree};
 use quote::{quote, ToTokens};
 use std::cmp::Ordering;
 use std::default::Default;
@@ -15,14 +14,14 @@ use syn::{punctuated::Punctuated, token::Comma, WherePredicate};
 #[derive(Debug)]
 struct DelegateImplementer {
     generics: Generics,
-    ty: syn::Ident,
+    ty: Ident,
     info: DelegateImplementerInfo,
 }
 
 #[derive(Debug)]
 enum DelegateImplementerInfo {
     Enum {
-        variant_idents: Vec<syn::Ident>,
+        variant_idents: Vec<Ident>,
         first_type: syn::Type,
         other_types: Vec<syn::Type>,
     },
@@ -105,6 +104,7 @@ enum DelegateTarget {
 struct DelegateArgs {
     target: DelegateTarget,
     where_clauses: Punctuated<WherePredicate, Comma>,
+    generics: Vec<GenericParam>,
 }
 
 fn is_comma(tt: &TokenTree) -> bool {
@@ -122,8 +122,11 @@ impl DelegateArgs {
         assert!(outer_iter.next().is_none(), "{}", INVALID_MSG);
         let path: TokenStream2 = iter.by_ref().take_while(|tt| !is_comma(tt)).collect();
         let path = parse_quote! {#path};
-        let mut target = DelegateTarget::None;
-        let mut where_clauses = Punctuated::new();
+        let mut res = DelegateArgs {
+            target: DelegateTarget::None,
+            where_clauses: Punctuated::new(),
+            generics: Vec::new(),
+        };
         loop {
             match iter.next_tuple() {
                 Some((TokenTree::Ident(key), TokenTree::Punct(eq), TokenTree::Literal(val)))
@@ -132,10 +135,10 @@ impl DelegateArgs {
                     let lit: LitStr = parse_quote!(#val);
                     match &*key.to_string() {
                         "target" => {
-                            if !matches!(target, DelegateTarget::None) {
+                            if !matches!(res.target, DelegateTarget::None) {
                                 panic!("\"target\" value for delegate attribute can only be specified once");
                             }
-                            target = if lit.value() == "self" {
+                            res.target = if lit.value() == "self" {
                                 DelegateTarget::TrgSelf
                             } else {
                                 let target_val = lit.parse().expect("Invalid syntax for delegate attribute; Expected ident as value for \"target\"");
@@ -144,7 +147,11 @@ impl DelegateArgs {
                         }
                         "where" => {
                             let where_clause_val = lit.parse_with(Punctuated::<WherePredicate, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected where clause syntax as value for \"where\"");
-                            where_clauses.extend(where_clause_val);
+                            res.where_clauses.extend(where_clause_val);
+                        }
+                        "generics" => {
+                            let generics_val = lit.parse_with(Punctuated::<GenericParam, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected list of generic parameters as value for \"generics\"");
+                            res.generics.extend(generics_val);
                         }
                         _ => {
                             panic!("{} is not a valid key for a delegate attribute", key)
@@ -160,13 +167,7 @@ impl DelegateArgs {
                 _ => panic!("{}", INVALID_MSG),
             }
         }
-        (
-            path,
-            Self {
-                target,
-                where_clauses,
-            },
-        )
+        (path, res)
     }
 }
 
@@ -195,18 +196,14 @@ impl DelegateTarget {
 fn generics_for_impl(
     mut explicit_where_clauses: Punctuated<WherePredicate, Token![,]>,
     implementer: &DelegateImplementer,
-) -> (
-    syn::ImplGenerics<'_>,
-    syn::TypeGenerics<'_>,
-    syn::WhereClause,
-) {
+) -> (ImplGenerics<'_>, syn::TypeGenerics<'_>, WhereClause) {
     let generics = &implementer.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     // Merges the where clause based on the type generics with all the where clauses specified
     // via "where" macro attributes.
     explicit_where_clauses.extend(where_clause.into_iter().flat_map(|n| n.predicates.clone()));
-    let merged_where_clause = syn::WhereClause {
+    let merged_where_clause = WhereClause {
         where_token: Default::default(),
         predicates: explicit_where_clauses,
     };
@@ -246,29 +243,6 @@ fn merge_generics(
     })
 }
 
-fn find_added_generics(ts: TokenStream2, dst: &mut Vec<GenericParam>) {
-    let mut iter = ts.into_iter().peekable();
-    match iter.peek() {
-        Some(TokenTree::Ident(id)) if regex_is_match!(r"X\d*", &id.to_string()) => {
-            dst.push(parse_quote!(#id))
-        }
-        Some(TokenTree::Group(g)) => find_added_generics(g.stream(), dst),
-        _ => {}
-    };
-    iter.tuple_windows().for_each(|x| match x {
-        (_, TokenTree::Ident(id)) if regex_is_match!(r"X\d*", &id.to_string()) => {
-            dst.push(parse_quote!(#id))
-        }
-        (TokenTree::Punct(p), TokenTree::Ident(id))
-            if regex_is_match!(r"x\d*", &id.to_string()) && p.as_char() == '\'' =>
-        {
-            dst.push(parse_quote! {#p #id})
-        }
-        (_, TokenTree::Group(g)) => find_added_generics(g.stream(), dst),
-        _ => {}
-    })
-}
-
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
@@ -303,7 +277,7 @@ fn delegate_single_atrr(
     let implementer_ident = &implementer.ty;
     let (trait_path_full, args) = DelegateArgs::from_tokens(delegate_attr);
     let trait_segment = trait_path_full.segments.last().unwrap();
-    let trait_ident: &syn::Ident = &trait_segment.ident;
+    let trait_ident: &Ident = &trait_segment.ident;
     let empty = Punctuated::new();
     let trait_generics = match &trait_segment.arguments {
         PathArguments::None => &empty,
@@ -311,17 +285,14 @@ fn delegate_single_atrr(
         _ => panic!("cannot delegate to Fn* traits"),
     };
     let trait_generics_p = super::util::TailingPunctuated::wrap_ref(trait_generics);
-    let mut added_generics = Vec::new();
-    trait_generics
-        .iter()
-        .for_each(|x| find_added_generics(x.to_token_stream(), &mut added_generics));
+    let mut added_generics = args.generics;
     added_generics.sort_unstable_by(|x, y| match (x, y) {
         (GenericParam::Lifetime(_), GenericParam::Lifetime(_)) => Ordering::Equal,
         (GenericParam::Lifetime(_), _) => Ordering::Less,
         (_, GenericParam::Lifetime(_)) => Ordering::Greater,
         _ => Ordering::Equal,
     });
-    let macro_name: syn::Ident = macro_name(trait_ident);
+    let macro_name: Ident = macro_name(trait_ident);
 
     let (impl_generics, ty_generics, mut where_clause) =
         generics_for_impl(args.where_clauses, implementer);

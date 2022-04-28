@@ -17,9 +17,8 @@ impl<A: Display, B: Display> Shout<(A, B)> for Cat {
 }
 
 #[derive(Delegate)]
-#[delegate(Shout<(X1, &'x str)>, target="0")]
+#[delegate(Shout<(Y, &'a str)>, generics = "'a, Y", target="0")]
 pub struct WrappedCat(Cat, ());
-
 
 fn main() {
     let c = WrappedCat(Cat, ());

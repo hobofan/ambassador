@@ -17,7 +17,7 @@
 //!
 //! Delegating the implementation of traits to enum variants or fields of a struct normally requires a lot of boilerplate code. Ambassador is an attempt to eliminate that boilerplate by deriving the delegating trait implementation via procedural macros.
 //!
-//! **The minimum supported Rust version is 1.40.0.**
+//! **The minimum supported Rust version is 1.53.0.**
 //!
 //! See individual macro documentation for detailed instructions.
 //!
@@ -56,16 +56,16 @@
 //!
 //! // No automatic where clause provided for target = "self"
 //! #[delegate_remote]
-//! #[delegate(Get<X>, target = "self", where = "K: Hash + Eq + Borrow<X>, S: BuildHasher, X: Hash + Eq + ?Sized")]
+//! #[delegate(Get<X>, target = "self", generics = "X", where = "K: Hash + Eq + Borrow<X>, S: BuildHasher, X: Hash + Eq + ?Sized")]
 //! struct HashMap<K, V, S>();
 //!
 //! #[delegate_remote]
-//! #[delegate(Get<X>, target = "self", where = "K: Ord + Borrow<X>, X: Ord + ?Sized")]
+//! #[delegate(Get<X>, target = "self", generics = "X", where = "K: Ord + Borrow<X>, X: Ord + ?Sized")]
 //! struct BTreeMap<K, V>();
 //!
 //! #[derive(Delegate)]
 //! #[delegate(Map)]
-//! #[delegate(Get<X>, where = "X: ?Sized, B: Map<K=A::K, V=A::V>")]  //auto where clause misses required on super trait
+//! #[delegate(Get<X>, generics = "X", where = "X: ?Sized, B: Map<K=A::K, V=A::V>")]  //auto where clause misses required on super trait
 //! pub enum Either<A, B> {
 //!     Left(A),
 //!     Right(B),
@@ -77,6 +77,17 @@
 //!     assert_eq!(my_map.get("a"), Some(&1));
 //! }
 //! ```
+//!
+//! # Backwards Compatibility
+//! Since delegateable traits from one crate can be used in anther crate backwards compatibility of switching to 0.3.x depends on the use case
+//! ## Self Contained Crate
+//! Switching to 0.3.x should just work,
+//! in this case it safe to disable the "backward_compatible" feature
+//! ## Library with public delegatable traits
+//! Make sure use the "backward_compatible" feature (enabled by default),
+//! this makes sure users of your library using an older version of ambassador aren't affected by the upgrade
+//! ## Users of a library with public delegatable traits
+//! Try to use the same version of ambassador as the library you're using
 
 extern crate proc_macro;
 
@@ -208,13 +219,12 @@ use crate::register::build_register_trait;
 /// ```
 ///
 ///
-/// #### `#[delegate(Shout<X>)]` - trait generics
+/// #### `#[delegate(Shout<X>, generics = "X")]` - trait generics
 ///
 /// We can also delegate traits with generics.
-/// When doing this all instances of `X` and `'x` followed by arbitrary digits eg. `X0` `X12` `'x3` are treated as maximally generic.
+/// The type parameters listed in the `generics` key are treated as fully generic.
 /// The automatically added where clause ensures they are valid for the inner type being delegated to.
 /// Explict where clauses to further refine these types can be added as normal.
-/// Specific types can be used instead of `X` to only derive for those.
 ///
 /// ```
 /// use ambassador::{delegatable_trait, Delegate};
@@ -234,14 +244,14 @@ use crate::register::build_register_trait;
 /// }
 ///
 /// #[derive(Delegate)]
-/// #[delegate(Shout<X>)] // <-------- `X` signifies we want to be as generic as possible
+/// #[delegate(Shout<X>, generics = "X")] // <-------- `X` is fully generic
 /// // The automatic where clause ensures X: Display
-/// // We could also use #[delegate(Shout<& 'x str>)] to only delegate for &str
+/// // We could also use #[delegate(Shout<& 'a str>, generics = "'a")] to only delegate for &str
 /// pub struct WrappedCat(Cat);
 /// ```
 #[proc_macro_derive(Delegate, attributes(delegate))]
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
-    crate::derive::delegate_macro(input)
+    derive::delegate_macro(input)
 }
 
 /// Make an existing type that lives outside you crate delegate traits to it's members
@@ -286,7 +296,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 pub fn delegate_remote(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    crate::derive::delegate_macro(input)
+    derive::delegate_macro(input)
 }
 
 /// Make a trait available for delegation
@@ -324,13 +334,13 @@ pub fn delegatable_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// #[delegatable_trait_remote]
 /// trait Display {
-///     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error>;
+///     fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error>;
 /// }
 ///
 /// struct Cat;
 ///
 /// impl Display for Cat {
-///     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error>{
+///     fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error>{
 ///         f.write_str("Cat")
 ///     }
 /// }
