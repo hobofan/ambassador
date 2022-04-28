@@ -30,7 +30,7 @@ jobs:
       matrix:
         rust:
           - stable
-          - 1.52.0
+          - 1.53.0
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
