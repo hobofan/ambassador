@@ -2,7 +2,7 @@
 name = "ambassador"
 version = "0.3.0"
 authors = ["Maximilian Goisser <goisser94@gmail.com>", "David Ewert <dewert10@gmail.com>"]
-edition = "2021"
+edition = "2018"
 description = "Trait implementation delegation via procedural macros"
 keywords = ["trait", "delegate", "delegation", "macros", "proc-macros"]
 license = "MIT OR Apache-2.0"
