@@ -1,7 +1,7 @@
-use proc_macro2::TokenStream;
-use quote::{ToTokens};
-use syn::punctuated::Punctuated;
 use bytemuck::TransparentWrapper;
+use proc_macro2::TokenStream;
+use quote::ToTokens;
+use syn::punctuated::Punctuated;
 
 #[derive(TransparentWrapper)]
 #[repr(transparent)]
@@ -14,7 +14,9 @@ impl<T, P> TailingPunctuated<T, P> {
 }
 
 impl<T, P: Default + ToTokens> ToTokens for TailingPunctuated<T, P>
-where Punctuated<T, P>: ToTokens{
+where
+    Punctuated<T, P>: ToTokens,
+{
     fn to_tokens(&self, tokens: &mut TokenStream) {
         self.0.to_tokens(tokens);
         if !self.0.empty_or_trailing() {
