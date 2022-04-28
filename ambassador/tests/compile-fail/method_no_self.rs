@@ -5,8 +5,8 @@ use ambassador::{delegatable_trait, Delegate};
 #[delegatable_trait] //~ ERROR expected value, found module `self`
 pub trait Cry {
     fn shout() -> String;
-    //~^ ERROR no method named `shout` found for type `Cat` in the current scope
-    //~^^ ERROR no method named `shout` found for type `Dog` in the current scope
+    //~^ ERROR no method named `shout` found for struct `Cat` in the current scope
+    //~^^ ERROR no method named `shout` found for struct `Dog` in the current scope
 }
 
 pub struct Cat;

@@ -1,11 +1,14 @@
 extern crate ambassador;
 
-use ambassador::{delegatable_trait, Delegate};
+use ambassador::Delegate;
 
+use ambassador::delegatable_trait;
 #[delegatable_trait]
 pub trait Shout {
     fn shout(&self, input: &str) -> String;
 }
+
+
 
 pub struct Cat;
 
@@ -17,19 +20,24 @@ impl Shout for Cat {
 
 pub struct Dog;
 
+
 impl Shout for Dog {
     fn shout(&self, input: &str) -> String {
         format!("{} - wuff!", input)
     }
 }
 
-#[derive(Delegate)] //~ ERROR proc-macro derive panicked
-pub enum Animals {
-    Cat(Cat),
-    Dog(Dog),
+#[derive(Delegate)]
+#[delegate(Shout)]
+pub enum Either<A, B> {
+    Left(A),
+    Right(B),
 }
 
+
 pub fn main() {
-    let foo_animal = Animals::Cat(Cat);
-    println!("{}", foo_animal.shout("BAR")); //~ ERROR no method named `shout` found for enum `Animals` in the current scope
+    let foo_animal = Either::Left::<Cat, Dog>(Cat);
+    println!("{}", foo_animal.shout("BAR"));
+    let bar_animal = Either::Right::<Cat, Dog>(Dog);
+    println!("{}", bar_animal.shout("BAR"));
 }

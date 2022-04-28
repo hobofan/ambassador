@@ -1,20 +1,25 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Generics};
+use std::default::Default;
+use syn::{parse_macro_input, parse_quote, DeriveInput, Generics};
 use syn::{punctuated::Punctuated, token::Comma, WherePredicate};
+use super::register::{macro_name, match_name};
 
 #[derive(Clone, Debug)]
 enum DelegateImplementer {
     Enum {
         variant_idents: Vec<syn::Ident>,
+        first_type: syn::Type,
+        other_types: Vec<syn::Type>,
         generics: Generics,
     },
     SingleFieldStruct {
         field_ident: syn::Member,
+        field_type: syn::Type,
         generics: Generics,
     },
     MultiFieldStruct {
-        field_idents: Vec<syn::Member>,
+        fields: Vec<(syn::Member, syn::Type)>,
         generics: Generics,
     },
 }
@@ -22,68 +27,66 @@ enum DelegateImplementer {
 impl From<DeriveInput> for DelegateImplementer {
     fn from(input: DeriveInput) -> Self {
         let generics = input.generics;
-        let implementer: Option<DelegateImplementer> = match input.data {
+        let implementer: DelegateImplementer = match input.data {
             syn::Data::Enum(enum_data) => {
-                let variant_idents = enum_data.variants.into_iter().map(|n| n.ident).collect();
-                Some(DelegateImplementer::Enum {
+                let (variant_idents, mut variant_types) = enum_data
+                    .variants
+                    .into_iter()
+                    .map(|n| {
+                        let mut it = n.fields.into_iter();
+                        match it.next() {
+                            None => panic!("enum variant {} has no fields", n.ident),
+                            Some(f) => {
+                                if it.count() != 0 {
+                                    panic!("enum variant {} has multiple fields", n.ident)
+                                };
+                                (n.ident, f.ty)
+                            }
+                        }
+                    })
+                    .unzip::<_, _, Vec<_>, Vec<_>>();
+                let first_type = variant_types.pop().expect("enum has no variants");
+                DelegateImplementer::Enum {
                     variant_idents,
+                    first_type,
+                    other_types: variant_types,
                     generics,
-                })
+                }
             }
-            syn::Data::Struct(struct_data) => match struct_data.fields {
-                syn::Fields::Unnamed(fields_unnamed) => match fields_unnamed.unnamed.len() {
-                    1 => Some(DelegateImplementer::SingleFieldStruct {
-                        field_ident: syn::parse_quote! { 0 },
+            syn::Data::Struct(struct_data) => match struct_data.fields.len() {
+                0 => panic!("struct has no fields"),
+                1 => {
+                    let field = struct_data.fields.into_iter().next().unwrap();
+                    let field_ident = match field.ident {
+                        Some(id) => syn::Member::Named(id),
+                        None => syn::Member::Unnamed(0.into()),
+                    };
+                    DelegateImplementer::SingleFieldStruct {
+                        field_ident,
+                        field_type: field.ty,
                         generics,
-                    }),
-                    _ => {
-                        let field_idents: Vec<_> = fields_unnamed
-                            .unnamed
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, _)| i)
-                            .map(|i| syn::parse_str(&i.to_string()).unwrap())
-                            .collect();
-                        Some(DelegateImplementer::MultiFieldStruct {
-                            field_idents,
-                            generics,
-                        })
                     }
-                },
-                syn::Fields::Named(fields_named) => match fields_named.named.len() {
-                    1 => {
-                        let field_ident = fields_named.named[0].ident.as_ref().unwrap();
-                        Some(DelegateImplementer::SingleFieldStruct {
-                            field_ident: syn::parse_quote! { #field_ident },
-                            generics,
+                }
+                _ => {
+                    let fields = struct_data
+                        .fields
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, field)| match field.ident {
+                            Some(id) => (syn::Member::Named(id), field.ty),
+                            None => (syn::Member::Unnamed(i.into()), field.ty),
                         })
-                    }
-                    _ => {
-                        let field_idents: Vec<_> = fields_named
-                            .named
-                            .into_iter()
-                            .map(|field| field.ident.unwrap())
-                            .map(|field_ident| syn::parse_quote! { #field_ident })
-                            .collect();
-                        Some(DelegateImplementer::MultiFieldStruct {
-                            field_idents,
-                            generics,
-                        })
-                    }
-                },
-                _ => None,
+                        .collect();
+                    DelegateImplementer::MultiFieldStruct { fields, generics }
+                }
             },
-            _ => None,
-        };
-        if implementer.is_none() {
-            panic!(
+            _ => panic!(
                 "ambassador currently only supports #[derive(Delegate)] for: \n\
                  - single-field enums\n\
                  - (tuple) structs"
-            )
-        }
-
-        implementer.unwrap()
+            ),
+        };
+        implementer
     }
 }
 
@@ -156,30 +159,30 @@ impl<'a> DelegateArgs<'a> {
     }
 
     /// Select the correct field_ident based on the `target`.
-    pub fn get_field_ident(&self, field_idents: &'a [syn::Member]) -> &'a syn::Member {
+    pub fn get_field(
+        &self,
+        field_idents: &'a [(syn::Member, syn::Type)],
+    ) -> &'a (syn::Member, syn::Type) {
         if self.target.is_none() {
             panic!("\"target\" value on #[delegate] attribute has to be specified for structs with multiple fields");
         }
         let target = self.target.as_ref().unwrap();
 
-        let field_ident = field_idents.iter().find(|n| *n == target);
-        if field_ident.is_none() {
+        let field = field_idents.iter().find(|n| n.0 == *target);
+        if field.is_none() {
             panic!(
                 "Unknown field \"{}\" specified as \"target\" value in #[delegate] attribute",
                 PrettyTarget(target.clone())
             );
         }
-        field_ident.unwrap()
+        field.unwrap()
     }
 
     fn generics_for_impl(
-        &self,
+        self,
         implementer: &'a DelegateImplementer,
-    ) -> (
-        syn::ImplGenerics,
-        syn::TypeGenerics,
-        Option<syn::WhereClause>,
-    ) {
+        ty: &syn::Type,
+    ) -> (syn::ImplGenerics<'a>, syn::TypeGenerics<'a>, syn::WhereClause) {
         let generics = match implementer {
             DelegateImplementer::Enum { ref generics, .. } => generics,
             DelegateImplementer::SingleFieldStruct { ref generics, .. } => generics,
@@ -189,31 +192,20 @@ impl<'a> DelegateArgs<'a> {
 
         // Merges the where clause based on the type generics with all the where clauses specified
         // via "where" macro attributes.
-        let merge_where_clauses =
-            |type_where_clause: Option<&syn::WhereClause>,
-             explicit_where_clauses: &[Punctuated<WherePredicate, Comma>]| {
-                let clauses_iter = std::iter::empty()
-                    .chain(
-                        type_where_clause
-                            .map(|n| n.predicates.clone().into_iter())
-                            .into_iter()
-                            .flatten(),
-                    )
-                    .chain(
-                        explicit_where_clauses
-                            .iter()
-                            .map(|n| n.into_iter().cloned())
-                            .flatten(),
-                    );
+        let Self{ trait_path_full, where_clauses: explicit_where_clauses, .. } = self;
+        let merged_where_clause = {
+            let clauses_iter = std::iter::empty()
+                .chain(where_clause.into_iter().flat_map(|n| n.predicates.clone()))
+                .chain(std::iter::once(parse_quote!(#ty : #trait_path_full)))
+                .chain(explicit_where_clauses.into_iter().flatten());
 
-                syn::WhereClause {
-                    where_token: syn::Token![where](proc_macro2::Span::call_site()),
-                    predicates: clauses_iter.collect(),
-                }
-            };
-        let where_clause = Some(merge_where_clauses(where_clause, &self.where_clauses));
+            syn::WhereClause {
+                where_token: Default::default(),
+                predicates: clauses_iter.collect(),
+            }
+        };
 
-        (impl_generics, ty_generics, where_clause)
+        (impl_generics, ty_generics, merged_where_clause)
     }
 }
 
@@ -250,56 +242,67 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
         let args = DelegateArgs::from_meta(&meta);
         let trait_path_full: syn::Path = args.trait_path_full.clone();
         let trait_ident: &syn::Ident = &trait_path_full.segments.last().unwrap().ident;
+        let macro_name: syn::Ident = macro_name(trait_ident);
 
-        let (trait_path, trait_path_colon) = build_invocation_path(&trait_path_full);
-        let macro_name_body_single_struct: syn::Ident =
-            quote::format_ident!("ambassador_impl_{}_body_single_struct", trait_ident);
-        let macro_name_body_enum: syn::Ident =
-            quote::format_ident!("ambassador_impl_{}_body_enum", trait_ident);
-
-        let impl_macro = match implementer {
+        let impl_macro = match &implementer {
             DelegateImplementer::Enum {
-                ref variant_idents, ..
+                variant_idents,
+                first_type,
+                other_types,
+                ..
             } => {
                 if args.target.is_some() {
                     panic!(
                         "\"target\" value on #[delegate] attribute can not be specified for enums"
                     );
                 }
-                let (impl_generics, ty_generics, where_clause) =
-                    args.generics_for_impl(&implementer);
-
+                let (impl_generics, ty_generics, mut where_clause) =
+                    args.generics_for_impl(&implementer, first_type);
+                let match_name = match_name(trait_ident);
+                where_clause.predicates.extend(
+                    other_types
+                        .into_iter()
+                        .map::<WherePredicate, _>(|arg| parse_quote!(#arg : #match_name<#first_type>)),
+                );
+                let mod_name = quote::format_ident!("ambassador_module_{}_for_{}", trait_ident, implementer_ident);
                 quote! {
-                    impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name_body_enum!{#(#implementer_ident::#variant_idents),*}
+                    #[allow(non_snake_case)]
+                    mod #mod_name {
+                        use super::*;
+                        #macro_name!{use_assoc_ty_bounds}
+                        impl #impl_generics #trait_path_full for #implementer_ident #ty_generics #where_clause {
+                            #macro_name!{body_enum(#first_type, (#(#other_types),*), (#(#implementer_ident::#variant_idents),*))}
+                        }
                     }
                 }
             }
             DelegateImplementer::SingleFieldStruct {
-                ref field_ident, ..
+                field_ident,
+                field_type,
+                ..
             } => {
                 if args.target.is_some() {
                     panic!("\"target\" value on #[delegate] attribute can not be specified for structs with a single field");
                 }
                 let (impl_generics, ty_generics, where_clause) =
-                    args.generics_for_impl(&implementer);
+                    args.generics_for_impl(&implementer, field_type);
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name_body_single_struct!{#field_ident}
+                        #macro_name!{body_struct(#field_type, #field_ident)}
                     }
                 }
             }
-            DelegateImplementer::MultiFieldStruct {
-                ref field_idents, ..
-            } => {
-                let field_ident = args.get_field_ident(field_idents);
+            DelegateImplementer::MultiFieldStruct { fields, .. } => {
+                let field = args.get_field(fields);
+                let field_ident = &field.0;
+                let field_type = &field.1;
                 let (impl_generics, ty_generics, where_clause) =
-                    args.generics_for_impl(&implementer);
+                    args.generics_for_impl(&implementer, field_type);
 
                 quote! {
                     impl #impl_generics #trait_ident for #implementer_ident #ty_generics #where_clause {
-                        #trait_path#trait_path_colon#macro_name_body_single_struct!{#field_ident}
+                        #macro_name!{body_struct(#field_type, #field_ident)}
                     }
                 }
             }
@@ -314,36 +317,4 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 
     // Hand the output tokens back to the compiler
     TokenStream::from(expanded)
-}
-
-/// Build the invocation path prefix for the macro invocation.
-///
-/// Macros are always imported from the crate root
-///
-/// (None, None) -> ""
-/// (Some(...), Some(...)) -> "`foo_crate`::"
-fn build_invocation_path(
-    trait_path_full: &syn::Path,
-) -> (Option<syn::Path>, Option<syn::token::Colon2>) {
-    let to_take = trait_path_full.segments.len() - 1;
-    let trait_path: Vec<&syn::PathSegment> = trait_path_full
-        .segments
-        .iter()
-        .take(usize::max(to_take, 0))
-        .collect();
-    let trait_path_str = trait_path
-        .into_iter()
-        .map(|n| n.ident.to_string())
-        .collect::<Vec<_>>()
-        .join("::");
-
-    let (trait_path, trait_path_colon): (Option<syn::Path>, Option<syn::token::Colon2>) =
-        match trait_path_str.as_ref() {
-            "" => (None, None),
-            _ => (
-                Some(syn::parse_str(&trait_path_str).unwrap()),
-                Some(syn::parse_quote!(::)),
-            ),
-        };
-    (trait_path, trait_path_colon)
 }
