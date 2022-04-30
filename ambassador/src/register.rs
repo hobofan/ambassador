@@ -43,7 +43,7 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
         #[macro_export]
         macro_rules! #macro_name {
-            (body_struct(<#gen_matcher>, $ty:ty, $field_ident:tt)) => {
+            (body_struct(<#gen_matcher>, $ty:ty, $($field_ident:tt)*)) => {
                 #(#struct_items)*
             };
             (body_enum(<#gen_matcher>, $ty:ty, ($( $other_tys:ty ),+), ($( $variants:path ),+))) => {
@@ -65,7 +65,7 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         let legacy_macros = quote! {
             #[macro_export]
             macro_rules! #struct_name {
-                ($field_ident:tt) => {#macro_name!{body_struct(<>, (), $field_ident)}};
+                ($($field_ident:tt)*) => {#macro_name!{body_struct(<>, (), $($field_ident)*)}};
             }
             #[macro_export]
             macro_rules! #enum_name {
@@ -205,7 +205,7 @@ fn build_trait_items(
             (
                 {
                     let method_invocation =
-                        build_method_invocation(original_method, &quote!(self.$field_ident));
+                        build_method_invocation(original_method, &quote!(self.$($field_ident)*));
                     quote! {
                         #method_sig {
                             #method_invocation
