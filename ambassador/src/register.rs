@@ -18,18 +18,9 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
     let trait_ident = &original_item.ident;
     let macro_name = macro_name(trait_ident);
     let match_name = match_name(trait_ident);
-    let gen_idents: Vec<_> = original_item
-        .generics
-        .params
-        .iter()
-        .map(param_to_ident)
-        .collect();
-    let gen_matcher: TokenStream = original_item
-        .generics
-        .params
-        .iter()
-        .map(param_to_matcher)
-        .collect();
+    let gen_params = &original_item.generics.params;
+    let gen_idents: Vec<_> = gen_params.iter().map(param_to_ident).collect();
+    let gen_matcher: TokenStream = gen_params.iter().map(param_to_matcher).collect();
 
     let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) = original_item
         .items
@@ -38,13 +29,17 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         .multiunzip();
 
     let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, original_item, &match_name);
+    let gen_idents_pat: TokenStream = gen_idents.into_iter().map(|id| quote! {$ #id ,}).collect();
 
     let mut register_trait = quote! {
         #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
         #[macro_export]
         macro_rules! #macro_name {
-            (body_struct(<#gen_matcher>, $ty:ty, $field_ident:tt)) => {
+            (body_struct(<#gen_matcher>, $ty:ty, ($($ident_owned:tt)*), ($($ident_ref:tt)*), ($($ident_ref_mut:tt)*))) => {
                 #(#struct_items)*
+            };
+            (body_struct(<#gen_matcher>, $ty:ty, $field_ident:tt)) => {
+                #macro_name!{body_struct(<#gen_idents_pat>, $ty, ($field_ident), ($field_ident), ($field_ident))}
             };
             (body_enum(<#gen_matcher>, $ty:ty, ($( $other_tys:ty ),+), ($( $variants:path ),+))) => {
                 #(#enum_items)*
@@ -204,8 +199,12 @@ fn build_trait_items(
             let method_sig = replace_gen_idents(method_sig, gen_idents);
             (
                 {
-                    let method_invocation =
-                        build_method_invocation(original_method, &quote!(self.$field_ident));
+                    let field_ident = match receiver_type(original_method) {
+                        ReceiverType::Owned => quote!(self.$($ident_owned)*),
+                        ReceiverType::Ref => quote!(self.$($ident_ref)*),
+                        ReceiverType::MutRef => quote!(self.$($ident_mut_ref)*),
+                    };
+                    let method_invocation = build_method_invocation(original_method, &field_ident);
                     quote! {
                         #method_sig {
                             #method_invocation
@@ -235,6 +234,34 @@ fn build_trait_items(
             )
         }
         _ => unimplemented!(),
+    }
+}
+
+enum ReceiverType {
+    Owned,
+    Ref,
+    MutRef,
+}
+
+fn receiver_type(method: &syn::TraitItemMethod) -> ReceiverType {
+    match method.sig.receiver() {
+        Some(syn::FnArg::Receiver(r)) => {
+            if r.reference.is_none() {
+                ReceiverType::Owned
+            } else if r.mutability.is_none() {
+                ReceiverType::Ref
+            } else {
+                ReceiverType::MutRef
+            }
+        }
+        Some(syn::FnArg::Typed(_)) => panic!(
+            "Method {}'s receiver type is not supported (must one of self, &self, or &mut self)",
+            method.sig.ident
+        ),
+        None => panic!(
+            "Method {} in delegatable trait does not have a receiver",
+            method.sig.ident
+        ),
     }
 }
 
