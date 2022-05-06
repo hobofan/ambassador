@@ -202,7 +202,7 @@ fn build_trait_items(
                     let field_ident = match receiver_type(original_method) {
                         ReceiverType::Owned => quote!(self.$($ident_owned)*),
                         ReceiverType::Ref => quote!(self.$($ident_ref)*),
-                        ReceiverType::MutRef => quote!(self.$($ident_mut_ref)*),
+                        ReceiverType::MutRef => quote!(self.$($ident_ref_mut)*),
                     };
                     let method_invocation = build_method_invocation(original_method, &field_ident);
                     quote! {
