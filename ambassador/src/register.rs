@@ -106,7 +106,7 @@ fn make_assoc_ty_bound(
 ) -> TokenStream {
     let trait_ident = &item_trait.ident;
     let gen_params = &item_trait.generics.params;
-    let gen_params_t = super::util::TailingPunctuated::wrap_ref(gen_params);
+    let gen_params_t = super::util::TailingPunctuated(gen_params);
 
     let gen_tokens: TokenStream = gen_params.iter().flat_map(param_to_tokens).collect();
     let assoc_type_bounds: Vec<_> = items.iter()

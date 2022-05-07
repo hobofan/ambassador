@@ -91,6 +91,7 @@
 
 extern crate proc_macro;
 
+mod delegate_shared;
 mod derive;
 mod register;
 mod util;

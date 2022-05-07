@@ -1,19 +1,10 @@
-use bytemuck::TransparentWrapper;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::punctuated::Punctuated;
 
-#[derive(TransparentWrapper)]
-#[repr(transparent)]
-pub(crate) struct TailingPunctuated<T, P>(pub(crate) Punctuated<T, P>);
+pub(crate) struct TailingPunctuated<'a, T, P>(pub(crate) &'a Punctuated<T, P>);
 
-impl<T, P> TailingPunctuated<T, P> {
-    pub(crate) fn wrap_ref(inner: &Punctuated<T, P>) -> &Self {
-        TransparentWrapper::wrap_ref(inner)
-    }
-}
-
-impl<T, P: Default + ToTokens> ToTokens for TailingPunctuated<T, P>
+impl<'a, T, P: Default + ToTokens> ToTokens for TailingPunctuated<'a, T, P>
 where
     Punctuated<T, P>: ToTokens,
 {
