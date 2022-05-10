@@ -1,3 +1,4 @@
+use crate::util::{receiver_type, ReceiverType};
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens, TokenStreamExt};
@@ -234,34 +235,6 @@ fn build_trait_items(
             )
         }
         _ => unimplemented!(),
-    }
-}
-
-enum ReceiverType {
-    Owned,
-    Ref,
-    MutRef,
-}
-
-fn receiver_type(method: &syn::TraitItemMethod) -> ReceiverType {
-    match method.sig.receiver() {
-        Some(syn::FnArg::Receiver(r)) => {
-            if r.reference.is_none() {
-                ReceiverType::Owned
-            } else if r.mutability.is_none() {
-                ReceiverType::Ref
-            } else {
-                ReceiverType::MutRef
-            }
-        }
-        Some(syn::FnArg::Typed(_)) => panic!(
-            "Method {}'s receiver type is not supported (must one of self, &self, or &mut self)",
-            method.sig.ident
-        ),
-        None => panic!(
-            "Method {} in delegatable trait does not have a receiver",
-            method.sig.ident
-        ),
     }
 }
 

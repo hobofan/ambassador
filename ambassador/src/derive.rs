@@ -166,7 +166,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
         generics: input.generics,
         ty: input.ident,
     };
-    delegate_shared::delegate_macro(implementer, input.attrs, delegate_single_attr)
+    delegate_shared::delegate_macro(&implementer, input.attrs, delegate_single_attr).into()
 }
 
 fn delegate_single_attr(
@@ -177,9 +177,10 @@ fn delegate_single_attr(
     let (trait_ident, trait_generics_p) = delegate_shared::trait_info(&trait_path_full);
     let macro_name: Ident = macro_name(trait_ident);
 
-    let (impl_generics, ty_generics, mut where_clause) =
-        delegate_shared::generics_for_impl(args.where_clauses, &implementer.generics);
-    let impl_generics = delegate_shared::merge_generics(impl_generics, args.generics);
+    let generics = &implementer.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut where_clause = delegate_shared::build_where_clause(args.where_clauses, where_clause);
+    let impl_generics = delegate_shared::merge_impl_generics(impl_generics, args.generics);
     let implementer_ident = &implementer.ty;
     if matches!(&args.target, DelegateTarget::TrgSelf) {
         quote! {

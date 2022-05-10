@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2, TokenTree};
 use quote::ToTokens;
 use std::cmp::Ordering;
@@ -81,10 +80,10 @@ impl<T: DelegateTarget> DelegateArgs<T> {
 }
 
 pub(super) fn delegate_macro<I>(
-    input: I,
+    input: &I,
     attrs: Vec<syn::Attribute>,
     delegate_single: impl Fn(&I, TokenStream2) -> TokenStream2,
-) -> TokenStream {
+) -> TokenStream2 {
     // Parse the input tokens into a syntax tree
     let mut delegate_attributes = attrs
         .into_iter()
@@ -113,7 +112,7 @@ pub(super) fn trait_info(trait_path_full: &syn::Path) -> (&Ident, impl ToTokens 
     (trait_ident, trait_generics)
 }
 
-pub(super) fn merge_generics(
+pub(super) fn merge_impl_generics(
     impl_generics: ImplGenerics,
     added_generics: Vec<GenericParam>,
 ) -> impl Iterator<Item = GenericParam> {
@@ -130,21 +129,27 @@ pub(super) fn merge_generics(
     })
 }
 
-pub(super) fn generics_for_impl(
-    mut explicit_where_clauses: Punctuated<WherePredicate, Token![,]>,
-    generics: &Generics,
-) -> (ImplGenerics<'_>, syn::TypeGenerics<'_>, WhereClause) {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+pub(super) fn merge_generics<'a>(
+    impl_generics: &'a Punctuated<GenericParam, Token![,]>,
+    added_generics: &'a [GenericParam],
+) -> impl Iterator<Item = &'a GenericParam> {
+    // Make sure all lifetimes come first
+    impl_generics.iter().merge_by(added_generics, |&x, _| {
+        matches!(x, GenericParam::Lifetime(_))
+    })
+}
 
+pub(super) fn build_where_clause(
+    mut explicit_where_clauses: Punctuated<WherePredicate, Token![,]>,
+    where_clause: Option<&WhereClause>,
+) -> WhereClause {
     // Merges the where clause based on the type generics with all the where clauses specified
     // via "where" macro attributes.
     explicit_where_clauses.extend(where_clause.into_iter().flat_map(|n| n.predicates.clone()));
-    let merged_where_clause = WhereClause {
+    WhereClause {
         where_token: Default::default(),
         predicates: explicit_where_clauses,
-    };
-
-    (impl_generics, ty_generics, merged_where_clause)
+    }
 }
 
 pub(super) fn add_auto_where_clause(
