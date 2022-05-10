@@ -96,9 +96,9 @@ pub(super) fn delegate_macro<I>(
 
     let res: TokenStream2 = delegate_attributes
         .into_iter()
-        .flat_map(|attr| delegate_single(&input, attr))
+        .flat_map(|attr| delegate_single(input, attr))
         .collect();
-    res.into()
+    res
 }
 
 pub(super) fn trait_info(trait_path_full: &syn::Path) -> (&Ident, impl ToTokens + '_) {

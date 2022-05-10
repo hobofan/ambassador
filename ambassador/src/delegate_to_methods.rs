@@ -140,9 +140,7 @@ pub fn delegate_macro(input: TokenStream, keep_impl_block: bool) -> TokenStream 
     let mut input = parse_macro_input!(input as ItemImpl);
     let attrs = std::mem::take(&mut input.attrs);
     assert!(
-        attrs
-            .iter()
-            .all(|attr| attr.path.is_ident("delegate".into())),
+        attrs.iter().all(|attr| attr.path.is_ident("delegate")),
         "All attributes must be \"delegate\""
     );
     let input_copy = if keep_impl_block {
@@ -184,13 +182,13 @@ fn delegate_single_attr(
         delegate_shared::build_where_clause(args.where_clauses, implementer.where_clause.as_ref());
 
     let delegate_ty = args.target.get_ret_type(&implementer.methods);
-    let owned_ident = args.target.owned_id;
-    let ref_ident = args.target.ref_id;
-    let ref_mut_ident = args.target.ref_mut_id;
+    let owned_ident = args.target.owned_id.into_iter();
+    let ref_ident = args.target.ref_id.into_iter();
+    let ref_mut_ident = args.target.ref_mut_id.into_iter();
     add_auto_where_clause(&mut where_clause, &trait_path_full, delegate_ty);
     quote! {
         impl <#(#impl_generics,)*> #trait_path_full for #implementer_ty #where_clause {
-            #macro_name!{body_struct(<#trait_generics_p>, #delegate_ty, (#owned_ident()), (#ref_ident()), (#ref_mut_ident()))}
+            #macro_name!{body_struct(<#trait_generics_p>, #delegate_ty, (#(#owned_ident())*), (#(#ref_ident())*), (#(#ref_mut_ident())*))}
         }
     }
 }

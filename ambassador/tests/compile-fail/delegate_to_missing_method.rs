@@ -3,7 +3,8 @@ extern crate ambassador;
 use ambassador::{delegatable_trait, delegate_to_methods};
 use std::ops::DerefMut;
 
-#[delegatable_trait]
+#[delegatable_trait] //~ ERROR target_owned was not specified but was needed
+                     //~^ ERROR unexpected token: `.`
 trait MyTrait {
     fn get(&self) -> u32;
     fn change(&mut self);
