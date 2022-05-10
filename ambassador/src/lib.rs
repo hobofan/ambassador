@@ -89,8 +89,11 @@
 //! ## Users of a library with public delegatable traits
 //! Try to use the same version of ambassador as the library you're using
 
+extern crate core;
 extern crate proc_macro;
 
+mod delegate_shared;
+mod delegate_to_methods;
 mod derive;
 mod register;
 mod util;
@@ -252,6 +255,55 @@ use crate::register::build_register_trait;
 #[proc_macro_derive(Delegate, attributes(delegate))]
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
     derive::delegate_macro(input)
+}
+
+///Delegate the implementation of a trait to a type's methods by adding `#[delegate_to_methods]` and its associated attribute `#[delegate(Trait)]` to the relevant impl block
+///
+///#### `#[delegate(..., target_owned = "foo", target_ref = "bar", target_mut = "baz")]` - `target` keys
+/// Three different target methods can be specified depending on the receiver of of the trait method being delegated.
+/// These methods must have the signatures target_owned: "fn foo(self) -> X", target_ref: "fn bar(&self) -> &X", and target_mut: "fn baz(&mut self) -> &mut X"
+/// where X is the same type for all three.
+/// Excluding some of these attributes is allowed as long as the trait being delegated to doesn't have any methods with the relevant receiver
+/// Additional methods that don't have any of the relevant signature types may be included in the impl block as long as they are never used as targets.
+///
+/// #### The `where` and `generics` keys described in [`Delegate`] are also supported and function the same way
+///
+///```
+/// use std::ops::{Deref, DerefMut};
+/// use ambassador::{delegate_to_methods, delegatable_trait};
+///
+/// #[delegatable_trait]
+/// pub trait Shout {
+///     fn shout(&self, input: &str) -> String;
+/// }
+///
+/// pub struct Cat;
+///
+/// impl Shout for Cat {
+///     fn shout(&self, input: &str) -> String {
+///         format!("{} - meow!", input)
+///     }
+/// }
+///
+/// pub struct BoxedCat(Box<Cat>); // Target is hidden behind a box
+///
+/// #[delegate_to_methods]
+/// #[delegate(Shout, target_ref = "inner", target_mut = "inner_mut")]
+/// impl BoxedCat {
+///    fn inner(&self) -> &Cat {
+///         self.0.deref()
+///     }
+///
+///     // Note we don't need target_mut = "inner_mut" in this case but it is included as an example
+///     // The return type must be &mut Cat to match inner's return type &Cat
+///     fn inner_mut(&mut self) -> &mut Cat {
+///         self.0.deref_mut()
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn delegate_to_methods(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    delegate_to_methods::delegate_macro(input, true)
 }
 
 /// Make an existing type that lives outside you crate delegate traits to it's members

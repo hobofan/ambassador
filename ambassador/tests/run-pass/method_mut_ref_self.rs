@@ -15,19 +15,15 @@ impl Shout for Cat {
     }
 }
 
-pub struct Dog;
-
-impl Shout for Dog {
-    fn shout(&mut self) -> String {
-        "meow!".to_owned()
-    }
-}
+#[derive(Delegate)]
+#[delegate(Shout)]
+pub struct WrappedCat(Cat);
 
 #[derive(Delegate)]
 #[delegate(Shout)]
 pub enum Animals {
     Cat(Cat),
-    Dog(Dog),
+    Wrapped(WrappedCat),
 }
 
 pub fn main() {

@@ -1,6 +1,8 @@
+use crate::util::{receiver_type, ReceiverType};
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens, TokenStreamExt};
+use syn::__private::TokenStream2;
 use syn::{
     ConstParam, GenericParam, ItemTrait, LifetimeDef, TraitItem, TraitItemConst, TraitItemType,
     TypeParam,
@@ -14,38 +16,78 @@ pub(crate) fn match_name(trait_ident: &Ident) -> Ident {
     quote::format_ident!("Match{}", trait_ident)
 }
 
+struct UsedReceivers {
+    owned: bool,
+    ref_r: bool,
+    ref_mut: bool,
+}
+
+fn compile_error_or_none(message: &str, return_cmp_err: bool) -> Option<TokenStream2> {
+    if return_cmp_err {
+        Some(quote!(compile_error! {#message}))
+    } else {
+        None
+    }
+}
+
 pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
     let trait_ident = &original_item.ident;
     let macro_name = macro_name(trait_ident);
     let match_name = match_name(trait_ident);
-    let gen_idents: Vec<_> = original_item
-        .generics
-        .params
-        .iter()
-        .map(param_to_ident)
-        .collect();
-    let gen_matcher: TokenStream = original_item
-        .generics
-        .params
-        .iter()
-        .map(param_to_matcher)
-        .collect();
+    let gen_params = &original_item.generics.params;
+    let gen_idents: Vec<_> = gen_params.iter().map(param_to_ident).collect();
+    let gen_matcher: TokenStream = gen_params.iter().map(param_to_matcher).collect();
 
+    let mut used_recievers = UsedReceivers {
+        owned: false,
+        ref_r: false,
+        ref_mut: false,
+    };
     let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) = original_item
         .items
         .iter()
-        .map(|item| build_trait_items(item, trait_ident, &gen_idents))
+        .map(|item| build_trait_items(item, trait_ident, &gen_idents, &mut used_recievers))
         .multiunzip();
 
     let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, original_item, &match_name);
-
+    let gen_idents_pat: TokenStream = gen_idents.into_iter().map(|id| quote! {$ #id ,}).collect();
+    let check_owned = compile_error_or_none(
+        "target_owned was not specified but was needed",
+        used_recievers.owned,
+    );
+    let check_ref = compile_error_or_none(
+        "target_ref was not specified but was needed",
+        used_recievers.ref_r,
+    );
+    let check_ref_mut = compile_error_or_none(
+        "target_mut was not specified but was needed",
+        used_recievers.ref_mut,
+    );
     let mut register_trait = quote! {
         #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
         #[macro_export]
         macro_rules! #macro_name {
             (body_struct(<#gen_matcher>, $ty:ty, $field_ident:tt)) => {
+                #macro_name!{body_struct(<#gen_idents_pat>, $ty, ($field_ident), ($field_ident), ($field_ident))}
+            };
+            (body_struct(<#gen_matcher>, $ty:ty, ($($ident_owned:tt)*), ($($ident_ref:tt)*), ($($ident_ref_mut:tt)*))) => {
+                #macro_name!{check_owned($($ident_owned)*)}
+                #macro_name!{check_ref($($ident_ref)*)}
+                #macro_name!{check_ref_mut($($ident_ref_mut)*)}
                 #(#struct_items)*
             };
+            (check_owned()) => {
+                #check_owned
+            };
+            (check_owned($($_:tt)+)) => {};
+            (check_ref()) => {
+                #check_ref
+            };
+            (check_ref($($_:tt)+)) => {};
+            (check_ref_mut()) => {
+                #check_ref_mut
+            };
+            (check_ref_mut($($_:tt)+)) => {};
             (body_enum(<#gen_matcher>, $ty:ty, ($( $other_tys:ty ),+), ($( $variants:path ),+))) => {
                 #(#enum_items)*
             };
@@ -111,7 +153,7 @@ fn make_assoc_ty_bound(
 ) -> TokenStream {
     let trait_ident = &item_trait.ident;
     let gen_params = &item_trait.generics.params;
-    let gen_params_t = super::util::TailingPunctuated::wrap_ref(gen_params);
+    let gen_params_t = super::util::TailingPunctuated(gen_params);
 
     let gen_tokens: TokenStream = gen_params.iter().flat_map(param_to_tokens).collect();
     let assoc_type_bounds: Vec<_> = items.iter()
@@ -170,6 +212,7 @@ fn build_trait_items(
     original_item: &TraitItem,
     trait_ident: &Ident,
     gen_idents: &[&Ident],
+    used_recievers: &mut UsedReceivers,
 ) -> (TokenStream, TokenStream, TokenStream) {
     let gen_pat: TokenStream = gen_idents.iter().flat_map(|id| quote! {$#id,}).collect();
     match original_item {
@@ -204,8 +247,21 @@ fn build_trait_items(
             let method_sig = replace_gen_idents(method_sig, gen_idents);
             (
                 {
-                    let method_invocation =
-                        build_method_invocation(original_method, &quote!(self.$field_ident));
+                    let field_ident = match receiver_type(original_method) {
+                        ReceiverType::Owned => {
+                            used_recievers.owned = true;
+                            quote!(self.$($ident_owned)*)
+                        }
+                        ReceiverType::Ref => {
+                            used_recievers.ref_r = true;
+                            quote!(self.$($ident_ref)*)
+                        }
+                        ReceiverType::MutRef => {
+                            used_recievers.ref_mut = true;
+                            quote!(self.$($ident_ref_mut)*)
+                        }
+                    };
+                    let method_invocation = build_method_invocation(original_method, &field_ident);
                     quote! {
                         #method_sig {
                             #method_invocation
