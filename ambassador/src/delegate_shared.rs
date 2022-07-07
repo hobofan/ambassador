@@ -22,6 +22,7 @@ pub(super) struct DelegateArgs<T: DelegateTarget> {
     pub(crate) target: T,
     pub(crate) where_clauses: Punctuated<WherePredicate, Comma>,
     pub(crate) generics: Vec<GenericParam>,
+    pub(crate) inhibit_automatic_where_clause: bool,
 }
 
 fn is_comma(tt: &TokenTree) -> bool {
@@ -54,6 +55,9 @@ impl<T: DelegateTarget> DelegateArgs<T> {
                         "generics" => {
                             let generics_val = lit.parse_with(Punctuated::<GenericParam, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected list of generic parameters as value for \"generics\"");
                             res.generics.extend(generics_val);
+                        }
+                        "inhibit_automatic_where_clause" => {
+                            res.inhibit_automatic_where_clause = true;
                         }
                         key => res.target.try_update(key, lit).unwrap_or_else(|| {
                             panic!("{} is not a valid key for a delegate attribute", key)
