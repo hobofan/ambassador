@@ -24,7 +24,7 @@ impl Shout for Dog {
 }
 
 #[derive(Delegate)]
-#[delegate(Shout,inhibit_automatic_where_clause="true")]
+#[delegate(Shout,automatic_where_clause="false")]
 pub struct WrappedAnimals(pub Box<dyn Shout>);
 
 

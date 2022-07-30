@@ -56,14 +56,14 @@ impl<T: DelegateTarget> DelegateArgs<T> {
                             let generics_val = lit.parse_with(Punctuated::<GenericParam, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected list of generic parameters as value for \"generics\"");
                             res.generics.extend(generics_val);
                         }
-                        "inhibit_automatic_where_clause" => {
+                        "automatic_where_clause" => {
                             let val = val.to_string();
                             if &val == "\"true\"" {
-                                res.inhibit_automatic_where_clause = true;
-                            } else if &val == "\"false\"" {
                                 res.inhibit_automatic_where_clause = false;
+                            } else if &val == "\"false\"" {
+                                res.inhibit_automatic_where_clause = true;
                             } else {
-                                panic!("inhibit_automatic_where_clause delegate attribute should have value \"true\" or \"false\".")
+                                panic!("automatic_where_clause delegate attribute should have value \"true\" or \"false\".")
                             }
                         }
                         key => res.target.try_update(key, lit).unwrap_or_else(|| {
