@@ -252,6 +252,42 @@ use crate::register::build_register_trait;
 /// // We could also use #[delegate(Shout<& 'a str>, generics = "'a")] to only delegate for &str
 /// pub struct WrappedCat(Cat);
 /// ```
+/// 
+/// 
+/// #### `#[delegate(Shout, automatic_where_clause = "false")]` - inhibit automatic generation of `where` clause.
+/// 
+/// Normally `#[derive(Delegate)]` generates code to ensure that chosen field indeed implementes  the trait
+/// you want to implement for the container struct.
+/// However, you may want to delegate implementation to something that does not in fact fully implement the trait
+/// in question, instead just have compatible methods that can be called as if the trait were in fact implemented.
+/// 
+/// One notable case of this is implementing `MyTrait` for `Box<dyn MyTrait>` or similar trait object things.
+/// It is not always possible even for object-safe traits, but is often possible.
+/// 
+/// ```
+/// use ambassador::{delegatable_trait, Delegate};
+/// use std::fmt::Display;
+///
+/// #[delegatable_trait]
+/// pub trait Shout {
+///     fn shout(&self, input: &str) -> String;
+/// }
+///
+/// pub struct Cat;
+///
+/// impl Shout for Cat {
+///     fn shout(&self, input: &str) -> String {
+///         format!("{} - meow!", input)
+///     }
+/// }
+///
+/// #[derive(Delegate)]
+/// #[delegate(Shout, automatic_where_clause="false")]
+/// pub struct BoxedAnimal(pub Box<dyn Shout + Send + Sync>);
+/// 
+/// // Can accept both `Cat` and `BoxedAnimal`.
+/// fn recording_studio<S: Shout>(voice_actor: S){}
+/// ```
 #[proc_macro_derive(Delegate, attributes(delegate))]
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
     derive::delegate_macro(input)
