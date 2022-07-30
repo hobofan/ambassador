@@ -57,7 +57,14 @@ impl<T: DelegateTarget> DelegateArgs<T> {
                             res.generics.extend(generics_val);
                         }
                         "inhibit_automatic_where_clause" => {
-                            res.inhibit_automatic_where_clause = true;
+                            let val = val.to_string();
+                            if &val == "\"true\"" {
+                                res.inhibit_automatic_where_clause = true;
+                            } else if &val == "\"false\"" {
+                                res.inhibit_automatic_where_clause = false;
+                            } else {
+                                panic!("inhibit_automatic_where_clause delegate attribute should have value \"true\" or \"false\".")
+                            }
                         }
                         key => res.target.try_update(key, lit).unwrap_or_else(|| {
                             panic!("{} is not a valid key for a delegate attribute", key)
@@ -65,7 +72,14 @@ impl<T: DelegateTarget> DelegateArgs<T> {
                     }
                 }
                 Some(_) => panic!("{}", INVALID_MSG),
-                None => break, // We might have looped around with a trailing comma
+                None => {
+                    // We might have looped around with a trailing comma, no attributes
+                    //  at all or some unfinished attribute
+                    // Unfortunately, it is not easy to discriminate those cases
+                    // because of `Itertools::next_tuple` throws away partial data
+                    // (which would have contained indication of possible error) and returns None.
+                    break;
+                }
             }
             match iter.next() {
                 Some(p) if is_comma(&p) => continue, // comma go around again
