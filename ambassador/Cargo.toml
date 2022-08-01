@@ -23,7 +23,7 @@ proc-macro2 = "1.0.6"
 itertools = "0.10.3"
 
 [dev-dependencies]
-compiletest_rs = { version = "0.3.25", features = [ "stable" ]}
+compiletest_rs = "0.8"
 
 [package.metadata.release]
 no-dev-version = true
