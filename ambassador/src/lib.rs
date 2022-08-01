@@ -471,6 +471,11 @@ pub fn delegate_to_methods(_attr: TokenStream, input: TokenStream) -> TokenStrea
     delegate_to_methods::delegate_macro(input, true)
 }
 
+#[proc_macro_attribute]
+pub fn delegate_to_remote_methods(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    delegate_to_methods::delegate_macro(input, false)
+}
+
 /// Make an existing type that lives outside you crate delegate traits to it's members
 ///
 /// This can be done by copy-pasting it's definition into your code under this attribute.
