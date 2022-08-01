@@ -5,9 +5,11 @@ use crate::util::ReceiverType;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
+use std::collections::HashSet;
 use std::convert::{TryFrom, TryInto};
 use std::default::Default;
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{
     parse_macro_input, GenericParam, ItemImpl, LitStr, ReturnType, Token, Type, WhereClause,
 };
@@ -95,6 +97,17 @@ impl delegate_shared::DelegateTarget for DelegateTarget {
     }
 }
 
+impl DelegateTarget {
+    fn as_arr(&self) -> [(ReceiverType, Option<&Ident>); 3] {
+        use ReceiverType::*;
+        [
+            (Owned, self.owned_id.as_ref()),
+            (Ref, self.ref_id.as_ref()),
+            (MutRef, self.ref_mut_id.as_ref()),
+        ]
+    }
+}
+
 type DelegateArgs = delegate_shared::DelegateArgs<DelegateTarget>;
 
 fn search_methods<'a>(
@@ -120,11 +133,10 @@ fn search_methods<'a>(
 impl DelegateTarget {
     /// Select the correct return.
     pub fn get_ret_type<'a>(&self, methods: &'a [MethodInfo]) -> &'a Type {
-        let owned_ty = search_methods(self.owned_id.as_ref(), methods, ReceiverType::Owned);
-        let ref_ty = search_methods(self.ref_id.as_ref(), methods, ReceiverType::Ref);
-        let ref_mut_ty = search_methods(self.ref_mut_id.as_ref(), methods, ReceiverType::MutRef);
-        let res = IntoIterator::into_iter([owned_ty, ref_ty, ref_mut_ty])
-            .flatten()
+        let res = self
+            .as_arr()
+            .iter()
+            .flat_map(|(recv_ty, id)| search_methods(*id, methods, *recv_ty))
             .fold(None, |rsf, x| match rsf {
                 None => Some(x),
                 Some(y) if y == x => Some(x),
@@ -132,6 +144,80 @@ impl DelegateTarget {
             });
 
         res.unwrap_or_else(|| panic!("no targets were specified"))
+    }
+}
+
+// Checks that:
+//   - all the items in an impl are methods
+//   - all the methods are _empty_ (no body, just the signature)
+//   - all the methods provided are actually referenced in the `delegate` attributes on the impl
+fn check_for_method_impls_and_extras(
+    attrs: &[syn::Attribute],
+    impl_items: &[syn::ImplItem],
+) -> Result<(), syn::Error> {
+    use delegate_shared::DelegateTarget as _;
+
+    let referenced_target_methods = {
+        let mut hs: HashSet<syn::Ident> = HashSet::new();
+
+        for delegate_attr in attrs {
+            let mut delegate_target = DelegateTarget::default();
+            for (k, v) in
+                delegate_shared::delegate_attr_as_trait_and_iter(delegate_attr.tokens.clone()).1
+            {
+                let _ = delegate_target.try_update(&*k, v);
+
+                hs.extend(
+                    delegate_target
+                        .as_arr()
+                        .iter()
+                        .filter_map(|(_, func_name)| func_name.cloned()),
+                );
+            }
+        }
+
+        hs
+    };
+
+    let error_message = impl_items.iter()
+        .filter_map(|i| {
+            // We're looking for *only* empty methods (no block).
+            if let syn::ImplItem::Method(m) = i {
+                let block = &m.block;
+                let empty_block = syn::parse2::<syn::ImplItemMethod>(quote!{ fn foo(); })
+                    .unwrap().block;
+
+                // We'll accept `{}` blocks and omitted blocks (i.e. `fn foo();`):
+                if block.stmts.is_empty() || block == &empty_block {
+                    // Provided that they're actually referenced by a
+                    // `delegate(...)` attr on this impl:
+                    if referenced_target_methods.contains(&m.sig.ident) {
+                        None
+                    } else {
+                        Some(syn::Error::new(m.span(), "This method is not used by any `delegate` attributes; please remove it"))
+                    }
+                } else {
+                    Some(syn::Error::new(block.span(), "Only method signatures are allowed here (no blocks!)"))
+                }
+            } else {
+                // Everything else is an error:
+                Some(syn::Error::new(i.span(), "Only method signatures are allowed here, everything else is discarded"))
+            }
+        })
+        .fold(None, |errors, error| {
+            match (errors, error) {
+                (None, err) => Some(err),
+                (Some(mut errs), err) => {
+                    errs.extend(err);
+                    Some(errs)
+                },
+            }
+        });
+
+    if let Some(err) = error_message {
+        Err(err)
+    } else {
+        Ok(())
     }
 }
 
@@ -146,6 +232,10 @@ pub fn delegate_macro(input: TokenStream, keep_impl_block: bool) -> TokenStream 
     let input_copy = if keep_impl_block {
         Some(input.to_token_stream())
     } else {
+        if let Err(e) = check_for_method_impls_and_extras(&attrs, &input.items) {
+            return e.into_compile_error().into();
+        }
+
         None
     };
     let implementer = DelegateImplementer {
