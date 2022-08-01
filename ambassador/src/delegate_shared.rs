@@ -32,9 +32,9 @@ fn is_comma(tt: &TokenTree) -> bool {
 
 const INVALID_MSG: &str = "Invalid syntax for delegate attribute";
 
-pub(super) fn delegate_attr_as_trait_and_iter(tokens: TokenStream2)
-    -> (syn::Path, impl Iterator<Item = (String, LitStr)>)
-{
+pub(super) fn delegate_attr_as_trait_and_iter(
+    tokens: TokenStream2,
+) -> (syn::Path, impl Iterator<Item = (String, LitStr)>) {
     let mut outer_iter = tokens.into_iter();
     let mut iter = match outer_iter.next() {
         Some(TokenTree::Group(g)) => g.stream().into_iter(),
@@ -77,7 +77,7 @@ pub(super) fn delegate_attr_as_trait_and_iter(tokens: TokenStream2)
                     // encountered fewer than three trailing tokens and not that
                     // we've actually run out of tokens:
                     panic!("{} (extra trailing tokens)", INVALID_MSG);
-                },
+                }
             }
         }
     });

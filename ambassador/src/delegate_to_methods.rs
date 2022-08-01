@@ -5,11 +5,11 @@ use crate::util::ReceiverType;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
-use syn::spanned::Spanned;
+use std::collections::HashSet;
 use std::convert::{TryFrom, TryInto};
 use std::default::Default;
-use std::collections::HashSet;
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{
     parse_macro_input, GenericParam, ItemImpl, LitStr, ReturnType, Token, Type, WhereClause,
 };
@@ -133,7 +133,8 @@ fn search_methods<'a>(
 impl DelegateTarget {
     /// Select the correct return.
     pub fn get_ret_type<'a>(&self, methods: &'a [MethodInfo]) -> &'a Type {
-        let res = self.as_arr()
+        let res = self
+            .as_arr()
             .iter()
             .flat_map(|(recv_ty, id)| search_methods(*id, methods, *recv_ty))
             .fold(None, |rsf, x| match rsf {
@@ -161,13 +162,16 @@ fn check_for_method_impls_and_extras(
 
         for delegate_attr in attrs {
             let mut delegate_target = DelegateTarget::default();
-            for (k, v) in delegate_shared::delegate_attr_as_trait_and_iter(delegate_attr.tokens.clone()).1 {
+            for (k, v) in
+                delegate_shared::delegate_attr_as_trait_and_iter(delegate_attr.tokens.clone()).1
+            {
                 let _ = delegate_target.try_update(&*k, v);
 
-                hs.extend(delegate_target
-                    .as_arr()
-                    .iter()
-                    .filter_map(|(_, func_name)| func_name.cloned())
+                hs.extend(
+                    delegate_target
+                        .as_arr()
+                        .iter()
+                        .filter_map(|(_, func_name)| func_name.cloned()),
                 );
             }
         }
