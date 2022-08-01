@@ -200,7 +200,9 @@ fn delegate_single_attr(
                         "\"target\" value on #[delegate] attribute can not be specified for enums"
                     );
                 }
-                add_auto_where_clause(&mut where_clause, &trait_path_full, first_type);
+                if !args.inhibit_automatic_where_clause {
+                    add_auto_where_clause(&mut where_clause, &trait_path_full, first_type);
+                }
                 let match_name = match_name(trait_ident);
                 where_clause
                     .predicates
@@ -230,7 +232,9 @@ fn delegate_single_attr(
                 if !matches!(&args.target, DelegateTarget::None) {
                     panic!("\"target\" value on #[delegate] attribute can not be specified for structs with a single field");
                 }
-                add_auto_where_clause(&mut where_clause, &trait_path_full, field_type);
+                if !args.inhibit_automatic_where_clause {
+                    add_auto_where_clause(&mut where_clause, &trait_path_full, field_type);
+                }
 
                 quote! {
                     impl <#(#impl_generics,)*> #trait_path_full for #implementer_ident #ty_generics #where_clause {
@@ -242,7 +246,9 @@ fn delegate_single_attr(
                 let field = args.target.get_field(fields);
                 let field_ident = &field.0;
                 let field_type = &field.1;
-                add_auto_where_clause(&mut where_clause, &trait_path_full, field_type);
+                if !args.inhibit_automatic_where_clause {
+                    add_auto_where_clause(&mut where_clause, &trait_path_full, field_type);
+                }
 
                 quote! {
                     impl <#(#impl_generics,)*> #trait_path_full for #implementer_ident #ty_generics #where_clause {

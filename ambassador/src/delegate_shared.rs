@@ -22,6 +22,7 @@ pub(super) struct DelegateArgs<T: DelegateTarget> {
     pub(crate) target: T,
     pub(crate) where_clauses: Punctuated<WherePredicate, Comma>,
     pub(crate) generics: Vec<GenericParam>,
+    pub(crate) inhibit_automatic_where_clause: bool,
 }
 
 fn is_comma(tt: &TokenTree) -> bool {
@@ -55,13 +56,30 @@ impl<T: DelegateTarget> DelegateArgs<T> {
                             let generics_val = lit.parse_with(Punctuated::<GenericParam, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected list of generic parameters as value for \"generics\"");
                             res.generics.extend(generics_val);
                         }
+                        "automatic_where_clause" => {
+                            let val = val.to_string();
+                            if &val == "\"true\"" {
+                                res.inhibit_automatic_where_clause = false;
+                            } else if &val == "\"false\"" {
+                                res.inhibit_automatic_where_clause = true;
+                            } else {
+                                panic!("automatic_where_clause delegate attribute should have value \"true\" or \"false\".")
+                            }
+                        }
                         key => res.target.try_update(key, lit).unwrap_or_else(|| {
                             panic!("{} is not a valid key for a delegate attribute", key)
                         }),
                     }
                 }
                 Some(_) => panic!("{}", INVALID_MSG),
-                None => break, // We might have looped around with a trailing comma
+                None => {
+                    // We might have looped around with a trailing comma, no attributes
+                    //  at all or some unfinished attribute
+                    // Unfortunately, it is not easy to discriminate those cases
+                    // because of `Itertools::next_tuple` throws away partial data
+                    // (which would have contained indication of possible error) and returns None.
+                    break;
+                }
             }
             match iter.next() {
                 Some(p) if is_comma(&p) => continue, // comma go around again
