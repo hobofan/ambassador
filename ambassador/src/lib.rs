@@ -27,10 +27,11 @@
 //! extern crate ambassador;
 //!
 //! use std::collections::{HashMap, BTreeMap};
-//! use std::hash::{Hash, BuildHasher};
-//! use std::cmp::{Eq, Ord};
 //! use std::borrow::Borrow;
-//! use ambassador::{delegatable_trait, delegate_remote, Delegate};
+//! use std::cmp::{Eq, Ord};
+//! use std::hash::{Hash, BuildHasher};
+//! use std::ops::Deref;
+//! use ambassador::{delegatable_trait, delegate_remote, delegate_to_remote_methods, Delegate};
 //!
 //! #[delegatable_trait]
 //! pub trait Map {
@@ -71,10 +72,20 @@
 //!     Right(B),
 //! }
 //!
+//! #[delegate_to_remote_methods]
+//! #[delegate(Map, target_ref = "deref")]
+//! impl<M: ?Sized + Map> Map for Box<M> {
+//!     fn deref(&self) -> &M;
+//! }
+//!
+//! fn takes_map(_m: &impl Map<K = &'static str, V = u32>) { }
 //!
 //! pub fn main() {
 //!     let my_map: Either<HashMap<&'static str, u32>, BTreeMap<&'static str, u32>> = Either::Left([("a", 1)].into());
 //!     assert_eq!(my_map.get("a"), Some(&1));
+//!
+//!     let boxed: Box<dyn Map<K = &'static str, V = u32>> = Box::new(my_map);
+//!     takes_map(&boxed);
 //! }
 //! ```
 //!
@@ -103,7 +114,7 @@ use quote::quote;
 
 use crate::register::build_register_trait;
 
-///Delegate the implementation of a trait to a struct field/enum variants by adding `#[derive(Delegate)]` and its associated attribute `#[delegate(Trait)]` to it:
+/// Delegate the implementation of a trait to a struct field/enum variants by adding `#[derive(Delegate)]` and its associated attribute `#[delegate(Trait)]` to it:
 ///
 /// ```
 /// use ambassador::{Delegate, delegatable_trait};
@@ -293,9 +304,9 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
     derive::delegate_macro(input)
 }
 
-///Delegate the implementation of a trait to a type's methods by adding `#[delegate_to_methods]` and its associated attribute `#[delegate(Trait)]` to the relevant impl block
+/// Delegate the implementation of a trait to a type's methods by adding `#[delegate_to_methods]` and its associated attribute `#[delegate(Trait)]` to the relevant impl block
 ///
-///#### `#[delegate(..., target_owned = "foo", target_ref = "bar", target_mut = "baz")]` - `target` keys
+/// #### `#[delegate(..., target_owned = "foo", target_ref = "bar", target_mut = "baz")]` - `target` keys
 /// Three different target methods can be specified depending on the receiver of of the trait method being delegated.
 /// These methods must have the signatures target_owned: "fn foo(self) -> X", target_ref: "fn bar(&self) -> &X", and target_mut: "fn baz(&mut self) -> &mut X"
 /// where X is the same type for all three.
@@ -304,7 +315,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 ///
 /// #### The `where` and `generics` keys described in [`Delegate`] are also supported and function the same way
 ///
-///```
+/// ```
 /// use std::ops::{Deref, DerefMut};
 /// use ambassador::{delegate_to_methods, delegatable_trait};
 ///
@@ -471,6 +482,177 @@ pub fn delegate_to_methods(_attr: TokenStream, input: TokenStream) -> TokenStrea
     delegate_to_methods::delegate_macro(input, true)
 }
 
+/// Delegate the implementation of a trait to methods on a type that are defined
+/// _elsewhere_.
+///
+/// This macro is identical to [`delegate_to_methods`] except that it does not
+/// actually produce an `impl` block on the type for the target methods; instead
+/// it assumes that the methods are implemented elsewhere.
+/// ```
+/// use ambassador::{delegate_to_remote_methods, delegatable_trait};
+///
+/// #[delegatable_trait]
+/// pub trait Shout {
+///     fn shout(&self, input: &str) -> String;
+/// }
+///
+/// pub struct Cat;
+///
+/// impl Shout for Cat {
+///     fn shout(&self, input: &str) -> String {
+///         format!("{} - meow!", input)
+///     }
+/// }
+///
+/// pub struct BoxedCat(Box<Cat>);
+///
+/// impl BoxedCat {
+///    fn inner(&self) -> &Cat { &self.0 }
+/// }
+///
+/// #[delegate_to_remote_methods]
+/// #[delegate(Shout, target_ref = "inner")]
+/// impl BoxedCat {
+///     // `inner` can be defined anywhere: trait method or inherent method, in
+///     // this crate or elsewhere
+///     fn inner(&self) -> &Cat;
+/// }
+/// ```
+///
+/// As such, this macro will actually error if you provide it with methods with
+/// blocks, method signatures that aren't used by a `delegate` attribute on the
+/// impl, or other impl items:
+/// ```rust,compile_fail
+/// # use ambassador::{delegate_to_remote_methods, delegatable_trait};
+/// # #[delegatable_trait]
+/// # pub trait Shout { fn shout(&self, input: &str) -> String; }
+/// # pub struct Cat;
+/// # impl Shout for Cat {
+/// #     fn shout(&self, input: &str) -> String { format!("{} - meow!", input) }
+/// # }
+/// # pub struct BoxedCat(Box<Cat>);
+/// # impl BoxedCat { fn inner(&self) -> &Cat { &self.0 } }
+///
+/// #[delegate_to_remote_methods]
+/// #[delegate(Shout, target_ref = "inner")]
+/// impl BoxedCat {
+///     fn inner(&self) -> &Cat { &self.0 } // This is an error, method bodies
+///                                         // aren't accepted
+///
+///     fn extra(&self);                    // Extra methods are also error since no
+///                                         // `impl BoxedCat { ... }` is actually
+///                                         // emitted
+///
+///     const CONST: () = ();               // This is also an error.
+/// }
+/// ```
+///
+/// Target methods can come from a trait or be inherent methods whose actual
+/// implementation lives elsewhere. You can mix and match:
+/// ```
+/// # use ambassador::{delegate_to_remote_methods, delegatable_trait};
+/// # #[delegatable_trait]
+/// # pub trait Shout { fn shout(&self, input: &str) -> String; }
+/// # pub struct Cat;
+/// # impl Shout for Cat {
+/// #     fn shout(&self, input: &str) -> String { format!("{} - meow!", input) }
+/// # }
+/// # pub struct BoxedCat(Box<Cat>);
+/// # impl BoxedCat { fn inner(&self) -> &Cat { &self.0 } }
+/// use std::ops::{Deref, DerefMut};
+///
+/// impl Deref for BoxedCat {
+///     type Target = Cat;
+///
+///     fn deref(&self) -> &Self::Target { &self.0 }
+/// }
+///
+/// impl DerefMut for BoxedCat {
+///     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
+/// }
+///
+/// #[delegate_to_remote_methods]
+/// #[delegate(Shout, target_ref = "inner", target_mut = "deref_mut")]
+/// impl BoxedCat {
+///     fn inner(&self) -> &Cat;
+///     fn deref_mut(&mut self) -> &mut Cat;
+/// }
+/// ```
+/// Note that if you do use target methods from a trait, the trait must be in
+/// scope.
+///
+/// Because this macro does not implement any inherent methods on the type being
+/// delegated to, the type can be remote (like with [`delegate_remote`]):
+/// ```
+/// # use ambassador::{delegate_to_remote_methods, delegatable_trait};
+/// # #[delegatable_trait]
+/// # pub trait Shout { fn shout(&self, input: &str) -> String; }
+/// # pub struct Cat;
+/// # impl Shout for Cat {
+/// #     fn shout(&self, input: &str) -> String { format!("{} - meow!", input) }
+/// # }
+/// use std::ops::{Deref, DerefMut};
+///
+/// // Note that this impl says `Deref for Box<Cat>`.
+/// //
+/// // The trait in this impl is ignored and only serves as documentation here.
+/// #[delegate_to_remote_methods]
+/// #[delegate(Shout, target_ref = "deref")]
+/// impl Deref for Box<Cat> {
+///     fn deref(&self) -> &Cat;
+/// }
+///
+/// fn shout(_: &impl Shout) { }
+///
+/// fn main() {
+///     let c = Cat;
+///     shout(&c);
+///
+///     let boxed: Box<Cat> = Box::new(c);
+///     shout(&boxed);
+/// }
+/// ```
+///
+/// This can be used in conjunction with generics to provide blanket delegated
+/// implementations of a local trait without needing to create intermediary
+/// local traits that provide target methods to use:
+/// ```
+/// # use ambassador::{delegatable_trait, delegate_to_remote_methods};
+/// # use std::ops::{Deref, DerefMut};
+/// # #[delegatable_trait]
+/// # pub trait Shout { fn shout(&self, input: &str) -> String; }
+/// # pub struct Cat;
+/// # impl Shout for Cat { fn shout(&self, input: &str) -> String { format!("{} - meow!", input) } }
+/// use std::{sync::Arc, rc::Rc};
+///
+/// pub struct Dog;
+/// impl Shout for Dog {
+///     fn shout(&self, input: &str) -> String { format!("{} - wuff!", input) }
+/// }
+///
+/// #[delegate_to_remote_methods]
+/// #[delegate(Shout, target_ref = "deref")]
+/// impl<S: ?Sized + Shout, T: Deref<Target = S>> T {
+///     fn deref(&self) -> &S;
+/// }
+///
+/// pub fn shout(pet: &impl Shout) { println!("{}", pet.shout("hi")); }
+///
+/// pub fn main() {
+///     shout(&Cat);
+///     shout(&Dog);
+///
+///     let a: Box<dyn Shout> = Box::new(Cat);
+///     let b: Arc<dyn Shout + Send> = Arc::new(Dog);
+///     let c: Rc<dyn Shout + Send + Sync + 'static> = Rc::new(Cat);
+///     shout(&a);
+///     shout(&b);
+///     shout(&c);
+///
+///     let d: Box<Cat> = Box::new(Cat);
+///     shout(&d);
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn delegate_to_remote_methods(_attr: TokenStream, input: TokenStream) -> TokenStream {
     delegate_to_methods::delegate_macro(input, false)
