@@ -85,6 +85,58 @@ pub(super) fn delegate_attr_as_trait_and_iter(tokens: TokenStream2)
     (path, it)
 }
 
+#[cfg(test)]
+mod test_delegate_attr_iter {
+    use super::*;
+
+    macro_rules! tests {
+        ($(
+            $(#[$meta:meta])*
+            $name:ident =
+                delegate( $($tt:tt)* )
+                    $( => ($p:path, [$(($k:ident, $v:literal)),* $(,)?]) )?
+        ),* $(,)?) => {$(
+            $(#[$meta])?
+            #[test]
+            fn $name() {
+                let input = quote::quote! { ( $($tt)* ) };
+                let (trait_path, iter) = delegate_attr_as_trait_and_iter(input);
+                let pairs = iter.collect::<Vec<_>>();
+
+                $(
+                    let expected_trait_path = parse_quote! { $p };
+                    let expected_pairs = [
+                        $((core::stringify!($k).to_string(), parse_quote!($v))),*
+                    ];
+
+                    assert_eq!(trait_path, expected_trait_path);
+                    assert_eq!(pairs, expected_pairs);
+                )?
+
+                let _ = pairs;
+                let _ = trait_path;
+            }
+        )*};
+    }
+
+    tests! {
+        no_pairs = delegate(Trait) => (Trait, []),
+        one_pair = delegate(Trait, a = "foo") => (Trait, [(a, "foo")]),
+        multi_pair = delegate(Trait, a = "hello there", b = "!", other_attr = "blue")
+            => (Trait, [(a, "hello there"), (b, "!"), (other_attr, "blue")]),
+        trailing_comma = delegate(Trait, a = "foo",) => (Trait, [(a, "foo")]),
+
+        #[should_panic = "extra trailing tokens"]
+        malformed = delegate(Trait, a a),
+        #[should_panic = "expected comma"]
+        missing_comma = delegate(Trait, a = "foo" b = "bar"),
+        #[should_panic = ", b ="]
+        extra_comma = delegate(Trait, a = "foo",, b = "bar"),
+        #[should_panic = "extra trailing tokens"]
+        extra_trailing_args = delegate(Trait, a = "ff", b c),
+    }
+}
+
 impl<T: DelegateTarget> DelegateArgs<T> {
     pub fn from_tokens(tokens: TokenStream2) -> (syn::Path, Self) {
         let mut res = DelegateArgs::<T>::default();
