@@ -2,6 +2,7 @@ use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream as TokenStream2, TokenTree};
 use quote::ToTokens;
 use std::cmp::Ordering;
+use std::iter;
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
 use syn::{
@@ -29,62 +30,87 @@ fn is_comma(tt: &TokenTree) -> bool {
     matches!(tt, TokenTree::Punct(p) if p.as_char() == ',')
 }
 
-impl<T: DelegateTarget> DelegateArgs<T> {
-    pub fn from_tokens(tokens: TokenStream2) -> (syn::Path, Self) {
-        const INVALID_MSG: &str = "Invalid syntax for delegate attribute";
-        let mut outer_iter = tokens.into_iter();
-        let mut iter = match outer_iter.next() {
-            Some(TokenTree::Group(g)) => g.stream().into_iter(),
-            _ => panic!("{}", INVALID_MSG),
-        };
-        assert!(outer_iter.next().is_none(), "{}", INVALID_MSG);
-        let path: TokenStream2 = iter.by_ref().take_while(|tt| !is_comma(tt)).collect();
-        let path = parse_quote! {#path};
-        let mut res = DelegateArgs::<T>::default();
+const INVALID_MSG: &str = "Invalid syntax for delegate attribute";
+
+pub(super) fn delegate_attr_as_trait_and_iter(tokens: TokenStream2)
+    -> (syn::Path, impl Iterator<Item = (String, LitStr)>)
+{
+    let mut outer_iter = tokens.into_iter();
+    let mut iter = match outer_iter.next() {
+        Some(TokenTree::Group(g)) => g.stream().into_iter(),
+        _ => panic!("{}", INVALID_MSG),
+    };
+    assert!(outer_iter.next().is_none(), "{}", INVALID_MSG);
+    let path: TokenStream2 = iter.by_ref().take_while(|tt| !is_comma(tt)).collect();
+    let path = parse_quote! {#path};
+
+    let mut iter = iter.peekable();
+    let mut expecting_comma = false;
+    let it = iter::from_fn(move || {
         loop {
+            if expecting_comma {
+                let next = iter.next()?;
+                if is_comma(&next) {
+                    expecting_comma = false;
+                    continue;
+                } else {
+                    panic!("{}: `{}` (expected comma)", INVALID_MSG, next);
+                }
+            }
+
+            // If there's nothing else, we're done.
+            let _ = iter.peek()?;
+
             match iter.next_tuple() {
                 Some((TokenTree::Ident(key), TokenTree::Punct(eq), TokenTree::Literal(val)))
                     if eq.as_char() == '=' =>
                 {
                     let lit: LitStr = parse_quote!(#val);
-                    match &*key.to_string() {
-                        "where" => {
-                            let where_clause_val = lit.parse_with(Punctuated::<WherePredicate, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected where clause syntax as value for \"where\"");
-                            res.where_clauses.extend(where_clause_val);
-                        }
-                        "generics" => {
-                            let generics_val = lit.parse_with(Punctuated::<GenericParam, Comma>::parse_terminated).expect("Invalid syntax for delegate attribute; Expected list of generic parameters as value for \"generics\"");
-                            res.generics.extend(generics_val);
-                        }
-                        "automatic_where_clause" => {
-                            let val = val.to_string();
-                            if &val == "\"true\"" {
-                                res.inhibit_automatic_where_clause = false;
-                            } else if &val == "\"false\"" {
-                                res.inhibit_automatic_where_clause = true;
-                            } else {
-                                panic!("automatic_where_clause delegate attribute should have value \"true\" or \"false\".")
-                            }
-                        }
-                        key => res.target.try_update(key, lit).unwrap_or_else(|| {
-                            panic!("{} is not a valid key for a delegate attribute", key)
-                        }),
+                    let key = key.to_string();
+
+                    expecting_comma = true;
+                    return Some((key, lit));
+                }
+                Some((a, b, c)) => panic!("{}: `{} {} {}`", INVALID_MSG, a, b, c),
+                None => {
+                    // Because of the check above, we know that this means we've
+                    // encountered fewer than three trailing tokens and not that
+                    // we've actually run out of tokens:
+                    panic!("{} (extra trailing tokens)", INVALID_MSG);
+                },
+            }
+        }
+    });
+
+    (path, it)
+}
+
+impl<T: DelegateTarget> DelegateArgs<T> {
+    pub fn from_tokens(tokens: TokenStream2) -> (syn::Path, Self) {
+        let mut res = DelegateArgs::<T>::default();
+        let (path, iter) = delegate_attr_as_trait_and_iter(tokens);
+        for (key, lit) in iter {
+            match &*key.to_string() {
+                "where" => {
+                    let where_clause_val = lit.parse_with(Punctuated::<WherePredicate, Comma>::parse_terminated)
+                        .expect("Invalid syntax for delegate attribute; Expected where clause syntax as value for \"where\"");
+                    res.where_clauses.extend(where_clause_val);
+                }
+                "generics" => {
+                    let generics_val = lit.parse_with(Punctuated::<GenericParam, Comma>::parse_terminated)
+                        .expect("Invalid syntax for delegate attribute; Expected list of generic parameters as value for \"generics\"");
+                    res.generics.extend(generics_val);
+                }
+                "automatic_where_clause" => {
+                    match &*lit.value() {
+                        "true" => res.inhibit_automatic_where_clause = false,
+                        "false" =>  res.inhibit_automatic_where_clause = true,
+                        other => panic!("automatic_where_clause delegate attribute should have value \"true\" or \"false\"; got: {}.", other),
                     }
                 }
-                Some(_) => panic!("{}", INVALID_MSG),
-                None => {
-                    // We might have looped around with a trailing comma, no attributes
-                    //  at all or some unfinished attribute
-                    // Unfortunately, it is not easy to discriminate those cases
-                    // because of `Itertools::next_tuple` throws away partial data
-                    // (which would have contained indication of possible error) and returns None.
-                    break;
-                }
-            }
-            match iter.next() {
-                Some(p) if is_comma(&p) => continue, // comma go around again
-                None => break,                       // no comma so we're done
-                _ => panic!("{}", INVALID_MSG),
+                key => res.target.try_update(key, lit).unwrap_or_else(|| {
+                    panic!("{} is not a valid key for a delegate attribute", key)
+                }),
             }
         }
         res.generics.sort_unstable_by(|x, y| match (x, y) {
