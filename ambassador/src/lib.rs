@@ -267,13 +267,27 @@ use crate::register::build_register_trait;
 ///
 /// #### `#[delegate(Shout, automatic_where_clause = "false")]` - inhibit automatic generation of `where` clause.
 ///
-/// Normally `#[derive(Delegate)]` generates code to ensure that chosen field indeed implementes  the trait
-/// you want to implement for the container struct.
-/// However, you may want to delegate implementation to something that does not in fact fully implement the trait
-/// in question, instead just have compatible methods that can be called as if the trait were in fact implemented.
+/// Normally `#[derive(Delegate)]` generates code to ensure that chosen field
+/// indeed implements the trait you want to implement for the container struct.
 ///
-/// One notable case of this is implementing `MyTrait` for `Box<dyn MyTrait>` or similar trait object things.
-/// It is not always possible even for object-safe traits, but is often possible.
+/// For example, the `#[derive(Delegate)]` + `#[delegate(Shout<X>, generics = "X")]`
+/// in the example above will emit code that requires `Cat` (the type we're
+/// delegating to) to implement `Shout<X>`: `Cat: Shout<X>`.
+///
+/// However, you may want to delegate implementation to a type that does not in
+/// fact fully implement the trait in question but instead has _compatible
+/// methods_ that can be called as if the trait were in fact implemented.
+///
+/// One notable examples of this is delegating a trait implementation to
+/// container types holding a trait object; i.e. `MyTrait` for
+/// `Box<dyn MyTrait>`. In this example, `Box<dyn MyTrait`
+/// [`Deref`](core::ops::Deref)s into `dyn MyTrait` which provides `MyTrait`s
+/// methods; this allows us effectively just call `MyTrait`s methods directly
+/// on `Box<dyn MyTrait>` even though `Box<dyn MyTrait>` does not actually
+/// implement `MyTrait`.
+///
+/// `automatic_where_clause = "false"` lets us create a delegated impl of
+/// `MyTrait` that takes advantage of this.
 ///
 /// ```
 /// use ambassador::{delegatable_trait, Delegate};
@@ -293,12 +307,20 @@ use crate::register::build_register_trait;
 /// }
 ///
 /// #[derive(Delegate)]
-/// #[delegate(Shout, automatic_where_clause="false")]
+/// #[delegate(Shout, automatic_where_clause = "false")]
 /// pub struct BoxedAnimal(pub Box<dyn Shout + Send + Sync>);
 ///
 /// // Can accept both `Cat` and `BoxedAnimal`.
 /// fn recording_studio<S: Shout>(voice_actor: S){}
 /// ```
+///
+/// Note that it is also possible to create such a delegated impl by making use
+/// of [`macro@delegate_to_remote_methods`] with [`Deref::deref`] and
+/// [`DerefMut::deref_mut`] as the target methods. The docs on
+/// [`macro@delegate_to_remote_methods`] contain an example of this.
+///
+/// [`Deref::deref`]: core::ops::Deref::deref
+/// [`DerefMut::deref_mut`]: core::ops::DerefMut::deref_mut
 #[proc_macro_derive(Delegate, attributes(delegate))]
 pub fn delegate_macro(input: TokenStream) -> TokenStream {
     derive::delegate_macro(input)
@@ -485,7 +507,7 @@ pub fn delegate_to_methods(_attr: TokenStream, input: TokenStream) -> TokenStrea
 /// Delegate the implementation of a trait to methods on a type that are defined
 /// _elsewhere_.
 ///
-/// This macro is identical to [`delegate_to_methods`] except that it does not
+/// This macro is identical to [`macro@delegate_to_methods`] except that it does not
 /// actually produce an `impl` block on the type for the target methods; instead
 /// it assumes that the methods are implemented elsewhere.
 /// ```
@@ -582,7 +604,7 @@ pub fn delegate_to_methods(_attr: TokenStream, input: TokenStream) -> TokenStrea
 /// scope.
 ///
 /// Because this macro does not implement any inherent methods on the type being
-/// delegated to, the type can be remote (like with [`delegate_remote`]):
+/// delegated to, the type can be remote (like with [`macro@delegate_remote`]):
 /// ```
 /// # use ambassador::{delegate_to_remote_methods, delegatable_trait};
 /// # #[delegatable_trait]
