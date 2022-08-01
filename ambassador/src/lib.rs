@@ -335,7 +335,136 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 ///     fn inner_mut(&mut self) -> &mut Cat {
 ///         self.0.deref_mut()
 ///     }
+///
+///     // You can also have extra methods here:
+///     fn another_one(&self) { }
 /// }
+/// ```
+///
+/// #### `delegate_to_methods` on an `impl Trait for ...` block
+///
+/// It's also valid to use `delegate_to_methods` with a trait impl; i.e. to use
+/// the methods from a different trait to delegate a trait. For example:
+/// ```
+/// # use std::ops::{Deref, DerefMut};
+/// # use ambassador::{delegate_to_methods, delegatable_trait};
+/// # #[delegatable_trait]
+/// # pub trait Shout {
+/// #     fn shout(&self, input: &str) -> String;
+/// # }
+/// # pub struct Cat;
+/// # impl Shout for Cat {
+/// #     fn shout(&self, input: &str) -> String {
+/// #         format!("{} - meow!", input)
+/// #     }
+/// # }
+///
+/// pub struct RefCat<'a>(&'a Cat);
+///
+/// #[delegate_to_methods]
+/// #[delegate(Shout, target_ref = "deref")]
+/// impl<'a> Deref for RefCat<'a> {
+///     type Target = Cat;
+///
+///     fn deref(&self) -> &Cat { &self.0 }
+/// }
+/// ```
+///
+/// Note that this has a caveat: if the target methods you are delegating to
+/// share the same name as any of the methods in the trait being delegated you
+/// will likely get errors about ambiguity. For example:
+///
+/// ```rust,compile_fail
+/// # use std::ops::{Deref, DerefMut};
+/// # use ambassador::{delegate_to_methods, delegatable_trait};
+/// # #[delegatable_trait]
+/// # pub trait Shout {
+/// #     fn shout(&self, input: &str) -> String;
+/// # }
+/// # pub struct Cat;
+/// # impl Shout for Cat {
+/// #     fn shout(&self, input: &str) -> String {
+/// #         format!("{} - meow!", input)
+/// #     }
+/// # }
+///
+/// pub struct RefCat<'a>(&'a Cat);
+///
+/// trait GetAShouter {
+///   type Shouter: Shout;
+///
+///   fn shout(&self) -> &Self::Shouter;
+/// }
+///
+/// #[delegate_to_methods]
+/// #[delegate(Shout, target_ref = "shout")]
+/// impl<'a> GetAShouter for RefCat<'a> {
+///     type Shouter = Cat;
+///
+///     fn shout(&self) -> &Cat { &self.0 }
+/// }
+/// ```
+///
+/// Yields:
+/// ```text
+/// error[E0034]: multiple applicable items in scope
+///   --> src/lib.rs:363:32
+///    |
+/// 26 | #[delegate(Shout, target_ref = "shout")]
+///    |                                ^^^^^^^ multiple `shout` found
+///    |
+/// note: candidate #1 is defined in an impl of the trait `Shout` for the type `RefCat<'a>`
+///   --> src/lib.rs:345:5
+///    |
+/// 8  |     fn shout(&self, input: &str) -> String;
+///    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/// ...
+/// 25 | #[delegate_to_methods]
+///    | ---------------------- in this procedural macro expansion
+/// note: candidate #2 is defined in an impl of the trait `GetAShouter` for the type `RefCat<'a>`
+///   --> src/lib.rs:367:5
+///    |
+/// 30 |     fn shout(&self) -> &Cat { &self.0 }
+///    |     ^^^^^^^^^^^^^^^^^^^^^^^
+///    = note: this error originates in the macro `ambassador_impl_Shout` (in Nightly builds, run with -Z macro-backtrace for more info)
+/// ```
+///
+/// This is not an issue when the target methods are _inherent_ since inherent
+/// methods explicitly [have priority over trait methods](https://dtolnay.github.io/rust-quiz/23)
+/// during method resolution.
+///
+/// The workaround is to create wrapper inherent methods for the trait's methods:
+/// ```
+/// # use std::ops::{Deref, DerefMut};
+/// # use ambassador::{delegate_to_methods, delegatable_trait};
+/// # #[delegatable_trait]
+/// # pub trait Shout {
+/// #     fn shout(&self, input: &str) -> String;
+/// # }
+/// # pub struct Cat;
+/// # impl Shout for Cat {
+/// #     fn shout(&self, input: &str) -> String {
+/// #         format!("{} - meow!", input)
+/// #     }
+/// # }
+///
+/// pub struct RefCat<'a>(&'a Cat);
+///
+/// trait GetAShouter {
+///   type Shouter: Shout;
+///
+///   fn shout(&self) -> &Self::Shouter;
+/// }
+///
+/// impl<'a> GetAShouter for RefCat<'a> {
+///     type Shouter = Cat;
+///
+///     fn shout(&self) -> &Cat { &self.0 }
+/// }
+///
+/// #[delegate_to_methods]
+/// #[delegate(Shout, target_ref = "get_a_shouter")]
+/// impl<'a> RefCat<'a> { fn get_a_shouter(&self) -> &Cat { GetAShouter::shout(self) } }
 /// ```
 #[proc_macro_attribute]
 pub fn delegate_to_methods(_attr: TokenStream, input: TokenStream) -> TokenStream {
