@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use syn::ext::IdentExt;
 use syn::parse::{ParseStream, Parser};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::{
     parse_quote, Error, GenericParam, Generics, ImplGenerics, LitBool, LitStr, PathArguments,
@@ -24,7 +25,7 @@ pub(super) struct DelegateArgs<T: DelegateTarget> {
 }
 
 macro_rules! error {
-    ($span:expr, $($rest:expr),*) => {Err(syn::parse::Error::new($span, format!($($rest),*)))};
+    ($span:expr, $($rest:expr),*) => {Err(syn::parse::Error::new($span, format_args!($($rest),*)))};
 }
 
 /// Like the '?' operator but returns Some(err) instead of err
@@ -108,7 +109,10 @@ pub(super) fn delegate_macro<I>(
         .map(|attr| attr.tokens)
         .peekable();
     if delegate_attributes.peek().is_none() {
-        panic!("No #[delegate] attribute specified. If you want to delegate an implementation of trait `SomeTrait` add the attribute:\n#[delegate(SomeTrait)]")
+        return error!(
+            proc_macro2::Span::call_site(),
+            "No #[delegate] attribute specified. If you want to delegate an implementation of trait `SomeTrait` add the attribute:\n#[delegate(SomeTrait)]"
+        ).unwrap_or_else(Error::into_compile_error);
     }
 
     let mut res = Ok(TokenStream2::new());
@@ -127,15 +131,15 @@ pub(super) fn delegate_macro<I>(
     res.unwrap_or_else(Error::into_compile_error)
 }
 
-pub(super) fn trait_info(trait_path_full: &syn::Path) -> (&Ident, impl ToTokens + '_) {
+pub(super) fn trait_info(trait_path_full: &syn::Path) -> Result<(&Ident, impl ToTokens + '_)> {
     let trait_segment = trait_path_full.segments.last().unwrap();
     let trait_ident: &Ident = &trait_segment.ident;
     let trait_generics = match &trait_segment.arguments {
         PathArguments::None => None,
         PathArguments::AngleBracketed(seg) => Some(super::util::TailingPunctuated(&seg.args)),
-        _ => panic!("cannot delegate to Fn* traits"),
+        _ => error!(trait_path_full.span(), "cannot delegate to Fn* traits")?,
     };
-    (trait_ident, trait_generics)
+    Ok((trait_ident, trait_generics))
 }
 
 pub(super) fn merge_impl_generics(

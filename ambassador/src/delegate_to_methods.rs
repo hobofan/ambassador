@@ -1,6 +1,7 @@
 use super::delegate_shared::{self, add_auto_where_clause, try_option};
 use super::register::macro_name;
 use super::util;
+use crate::delegate_shared::error;
 use crate::util::ReceiverType;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
@@ -105,39 +106,47 @@ impl DelegateTarget {
 type DelegateArgs = delegate_shared::DelegateArgs<DelegateTarget>;
 
 fn search_methods<'a>(
-    id: Option<&Ident>,
+    id: &Ident,
     methods: &'a [MethodInfo],
     receiver: ReceiverType,
-) -> Option<&'a Type> {
-    id.map(|id| {
-        let res = methods
-            .iter()
-            .find(|&m| &m.name == id)
-            .unwrap_or_else(|| panic!("impl block doesn't have any valid methods named {}", id));
-        assert!(
-            res.receiver == receiver,
-            "method {} needs to have a receiver of type {}",
-            id,
-            receiver
-        );
-        &res.ret
-    })
+) -> Result<&'a Type> {
+    match methods.iter().find(|&m| &m.name == id) {
+        None => error!(
+            id.span(),
+            "impl block doesn't have any valid methods with this name"
+        ),
+        Some(res) if res.receiver != receiver => error!(
+            id.span(),
+            "method needs to have a receiver of type {receiver}"
+        ),
+        Some(res) => Ok(&res.ret),
+    }
 }
 
 impl DelegateTarget {
     /// Select the correct return.
-    pub fn get_ret_type<'a>(&self, methods: &'a [MethodInfo]) -> &'a Type {
+    pub fn get_ret_type<'a>(
+        &self,
+        span: proc_macro2::Span,
+        methods: &'a [MethodInfo],
+    ) -> Result<&'a Type> {
         let res = self
             .as_arr()
             .iter()
-            .flat_map(|(recv_ty, id)| search_methods(*id, methods, *recv_ty))
-            .fold(None, |rsf, x| match rsf {
-                None => Some(x),
-                Some(y) if y == x => Some(x),
-                _ => panic!("target methods have different return types"),
+            .flat_map(|(recv_ty, id)| id.map(|id| search_methods(id, methods, *recv_ty)))
+            .fold(None, |rsf, x| match (rsf, x) {
+                (None, x) => Some(x),
+                (_, Err(x)) | (Some(Err(x)), _) => Some(Err(x)),
+                (Some(Ok(y)), Ok(x)) if y == x => Some(Ok(x)),
+                (Some(Ok(y)), Ok(x)) => {
+                    let mut err1 =
+                        syn::Error::new(x.span(), "target methods have different return types");
+                    let err2 = syn::Error::new(y.span(), "Note: other return type defined here");
+                    err1.combine(err2);
+                    Some(Err(err1))
+                }
             });
-
-        res.unwrap_or_else(|| panic!("no targets were specified"))
+        res.unwrap_or_else(|| error!(span, "no targets were specified"))
     }
 }
 
@@ -251,8 +260,9 @@ fn delegate_single_attr(
     implementer: &DelegateImplementer,
     delegate_attr: TokenStream2,
 ) -> Result<TokenStream2> {
+    let span = delegate_attr.span();
     let (trait_path_full, args) = DelegateArgs::from_tokens(delegate_attr)?;
-    let (trait_ident, trait_generics_p) = delegate_shared::trait_info(&trait_path_full);
+    let (trait_ident, trait_generics_p) = delegate_shared::trait_info(&trait_path_full)?;
     let macro_name: Ident = macro_name(trait_ident);
 
     let impl_generics = delegate_shared::merge_generics(&implementer.impl_generics, &args.generics);
@@ -260,7 +270,7 @@ fn delegate_single_attr(
     let mut where_clause =
         delegate_shared::build_where_clause(args.where_clauses, implementer.where_clause.as_ref());
 
-    let delegate_ty = args.target.get_ret_type(&implementer.methods);
+    let delegate_ty = args.target.get_ret_type(span, &implementer.methods)?;
     let owned_ident = args.target.owned_id.into_iter();
     let ref_ident = args.target.ref_id.into_iter();
     let ref_mut_ident = args.target.ref_mut_id.into_iter();
