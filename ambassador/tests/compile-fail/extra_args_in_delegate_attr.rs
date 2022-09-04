@@ -14,8 +14,8 @@ impl Shout for Cat {
     }
 }
 
-#[derive(Delegate)] //~ ERROR proc-macro derive panicked
-#[delegate(Shout, whoops = )]
+#[derive(Delegate)]
+#[delegate(Shout, whoops = )] //~ ERROR unexpected end of input, expected string literal
 pub struct Boxed(Cat);
 
-pub fn main() { }
+pub fn main() {}

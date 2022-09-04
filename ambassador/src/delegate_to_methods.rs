@@ -1,4 +1,4 @@
-use super::delegate_shared::{self, add_auto_where_clause};
+use super::delegate_shared::{self, add_auto_where_clause, try_option};
 use super::register::macro_name;
 use super::util;
 use crate::util::ReceiverType;
@@ -11,7 +11,7 @@ use std::default::Default;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    parse_macro_input, GenericParam, ItemImpl, LitStr, ReturnType, Token, Type, WhereClause,
+    parse_macro_input, GenericParam, ItemImpl, LitStr, Result, ReturnType, Token, Type, WhereClause,
 };
 
 struct DelegateImplementer {
@@ -30,7 +30,7 @@ struct MethodInfo {
 impl TryFrom<syn::ImplItemMethod> for MethodInfo {
     type Error = ();
 
-    fn try_from(method: syn::ImplItemMethod) -> Result<Self, ()> {
+    fn try_from(method: syn::ImplItemMethod) -> std::result::Result<Self, ()> {
         let receiver = util::try_receiver_type(&method).ok_or(())?;
         let ret = match method.sig.output {
             ReturnType::Default => return Err(()),
@@ -72,25 +72,19 @@ struct DelegateTarget {
 }
 
 impl delegate_shared::DelegateTarget for DelegateTarget {
-    fn try_update(&mut self, key: &str, lit: LitStr) -> Option<()> {
+    fn try_update(&mut self, key: &str, lit: LitStr) -> Option<Result<()>> {
         match key {
             "target_owned" => {
-                self.owned_id = Some(lit.parse().expect(
-                    "Invalid syntax for delegate attribute; Expected ident as value for \"target_owned\"",
-                ));
-                Some(())
+                self.owned_id = try_option!(lit.parse());
+                Some(Ok(()))
             }
             "target_ref" => {
-                self.ref_id = Some(lit.parse().expect(
-                    "Invalid syntax for delegate attribute; Expected ident as value for \"target_ref\"",
-                ));
-                Some(())
+                self.ref_id = try_option!(lit.parse());
+                Some(Ok(()))
             }
             "target_mut" => {
-                self.ref_mut_id = Some(lit.parse().expect(
-                    "Invalid syntax for delegate attribute; Expected ident as value for \"target_mut\"",
-                ));
-                Some(())
+                self.ref_mut_id = try_option!(lit.parse());
+                Some(Ok(()))
             }
             _ => None,
         }
@@ -154,26 +148,21 @@ impl DelegateTarget {
 fn check_for_method_impls_and_extras(
     attrs: &[syn::Attribute],
     impl_items: &[syn::ImplItem],
-) -> Result<(), syn::Error> {
-    use delegate_shared::DelegateTarget as _;
+) -> Result<()> {
+    use delegate_shared::DelegateArgs;
 
     let referenced_target_methods = {
-        let mut hs: HashSet<syn::Ident> = HashSet::new();
+        let mut hs: HashSet<Ident> = HashSet::new();
 
         for delegate_attr in attrs {
-            let mut delegate_target = DelegateTarget::default();
-            for (k, v) in
-                delegate_shared::delegate_attr_as_trait_and_iter(delegate_attr.tokens.clone()).1
-            {
-                let _ = delegate_target.try_update(&*k, v);
-
-                hs.extend(
-                    delegate_target
-                        .as_arr()
-                        .iter()
-                        .filter_map(|(_, func_name)| func_name.cloned()),
-                );
-            }
+            let delegate_args = DelegateArgs::from_tokens(delegate_attr.tokens.clone())?.1;
+            let delegate_target: DelegateTarget = delegate_args.target;
+            hs.extend(
+                delegate_target
+                    .as_arr()
+                    .iter()
+                    .filter_map(|(_, func_name)| func_name.cloned()),
+            );
         }
 
         hs
@@ -261,8 +250,8 @@ pub fn delegate_macro(input: TokenStream, keep_impl_block: bool) -> TokenStream 
 fn delegate_single_attr(
     implementer: &DelegateImplementer,
     delegate_attr: TokenStream2,
-) -> TokenStream2 {
-    let (trait_path_full, args) = DelegateArgs::from_tokens(delegate_attr);
+) -> Result<TokenStream2> {
+    let (trait_path_full, args) = DelegateArgs::from_tokens(delegate_attr)?;
     let (trait_ident, trait_generics_p) = delegate_shared::trait_info(&trait_path_full);
     let macro_name: Ident = macro_name(trait_ident);
 
@@ -276,9 +265,10 @@ fn delegate_single_attr(
     let ref_ident = args.target.ref_id.into_iter();
     let ref_mut_ident = args.target.ref_mut_id.into_iter();
     add_auto_where_clause(&mut where_clause, &trait_path_full, delegate_ty);
-    quote! {
+    let res = quote! {
         impl <#(#impl_generics,)*> #trait_path_full for #implementer_ty #where_clause {
             #macro_name!{body_struct(<#trait_generics_p>, #delegate_ty, (#(#owned_ident())*), (#(#ref_ident())*), (#(#ref_mut_ident())*))}
         }
-    }
+    };
+    Ok(res)
 }

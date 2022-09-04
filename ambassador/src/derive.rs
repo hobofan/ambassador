@@ -1,11 +1,10 @@
-use super::delegate_shared::{self, add_auto_where_clause};
+use super::delegate_shared::{self, add_auto_where_clause, error, try_option};
 use super::register::{macro_name, match_name};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::quote;
 use std::default::Default;
-use syn::WherePredicate;
-use syn::{parse_macro_input, parse_quote, DeriveInput, Generics, LitStr};
+use syn::{parse_macro_input, parse_quote, DeriveInput, Generics, LitStr, WherePredicate};
 
 #[derive(Debug)]
 struct DelegateImplementer {
@@ -104,19 +103,22 @@ impl Default for DelegateTarget {
 }
 
 impl delegate_shared::DelegateTarget for DelegateTarget {
-    fn try_update(&mut self, key: &str, lit: LitStr) -> Option<()> {
+    fn try_update(&mut self, key: &str, lit: LitStr) -> Option<syn::Result<()>> {
         match key {
             "target" => {
                 if !matches!(self, DelegateTarget::None) {
-                    panic!("\"target\" value for delegate attribute can only be specified once");
+                    try_option!(error!(
+                        lit.span(),
+                        "\"target\" value for delegate attribute can only be specified once"
+                    ));
                 }
                 *self = if lit.value() == "self" {
                     DelegateTarget::TrgSelf
                 } else {
-                    let target_val = lit.parse().expect("Invalid syntax for delegate attribute; Expected ident as value for \"target\"");
+                    let target_val = try_option!(lit.parse());
                     DelegateTarget::Field(target_val)
                 };
-                Some(())
+                Some(Ok(()))
             }
             _ => None,
         }
@@ -172,8 +174,8 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
 fn delegate_single_attr(
     implementer: &DelegateImplementer,
     delegate_attr: TokenStream2,
-) -> TokenStream2 {
-    let (trait_path_full, args) = DelegateArgs::from_tokens(delegate_attr);
+) -> syn::Result<TokenStream2> {
+    let (trait_path_full, args) = DelegateArgs::from_tokens(delegate_attr)?;
     let (trait_ident, trait_generics_p) = delegate_shared::trait_info(&trait_path_full);
     let macro_name: Ident = macro_name(trait_ident);
 
@@ -182,7 +184,7 @@ fn delegate_single_attr(
     let mut where_clause = delegate_shared::build_where_clause(args.where_clauses, where_clause);
     let impl_generics = delegate_shared::merge_impl_generics(impl_generics, args.generics);
     let implementer_ident = &implementer.ty;
-    if matches!(&args.target, DelegateTarget::TrgSelf) {
+    let res = if matches!(&args.target, DelegateTarget::TrgSelf) {
         quote! {
             impl <#(#impl_generics,)*> #trait_path_full for #implementer_ident #ty_generics #where_clause {
                 #macro_name!{body_self(<#trait_generics_p>)}
@@ -257,5 +259,6 @@ fn delegate_single_attr(
                 }
             }
         }
-    }
+    };
+    Ok(res)
 }
