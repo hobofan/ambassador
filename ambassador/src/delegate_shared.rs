@@ -1,3 +1,4 @@
+use crate::util::{error, process_results};
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::ToTokens;
@@ -23,22 +24,6 @@ pub(super) struct DelegateArgs<T: DelegateTarget> {
     pub(crate) generics: Vec<GenericParam>,
     pub(crate) inhibit_automatic_where_clause: bool,
 }
-
-macro_rules! error {
-    ($span:expr, $($rest:expr),*) => {Err(syn::parse::Error::new($span, format_args!($($rest),*)))};
-}
-
-/// Like the '?' operator but returns Some(err) instead of err
-macro_rules! try_option {
-    ($result:expr) => {
-        match $result {
-            Ok(ok) => ok,
-            Err(err) => return Some(Err(err)),
-        }
-    };
-}
-
-pub(crate) use {error, try_option};
 
 impl<T: DelegateTarget> DelegateArgs<T> {
     fn add_key_value(&mut self, key: Ident, lit: LitStr) -> Result<()> {
@@ -115,19 +100,10 @@ pub(super) fn delegate_macro<I>(
         ).unwrap_or_else(Error::into_compile_error);
     }
 
-    let mut res = Ok(TokenStream2::new());
-    for single_res in delegate_attributes
+    let iter = delegate_attributes
         .into_iter()
-        .map(|attr| delegate_single(input, attr))
-    {
-        match (single_res, &mut res) {
-            (Ok(single_res), Ok(res)) => res.extend(single_res),
-            (Ok(_), Err(_)) => {}
-            (Err(single_err), Ok(_)) => res = Err(single_err),
-            (Err(single_err), Err(other_errs)) => other_errs.combine(single_err),
-        }
-    }
-
+        .map(|attr| delegate_single(input, attr));
+    let res = process_results(iter, |iter| iter.flatten().collect());
     res.unwrap_or_else(Error::into_compile_error)
 }
 

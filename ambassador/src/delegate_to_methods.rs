@@ -1,8 +1,7 @@
-use super::delegate_shared::{self, add_auto_where_clause, try_option};
+use super::delegate_shared::{self, add_auto_where_clause};
 use super::register::macro_name;
 use super::util;
-use crate::delegate_shared::error;
-use crate::util::ReceiverType;
+use crate::util::{error, try_option, ReceiverType};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};

@@ -1,6 +1,6 @@
-use super::delegate_shared::{self, add_auto_where_clause, error, try_option};
-use super::register::{macro_name, match_name};
-use itertools::process_results;
+use crate::delegate_shared::{self, add_auto_where_clause};
+use crate::register::{macro_name, match_name};
+use crate::util::{error, process_results, try_option};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
