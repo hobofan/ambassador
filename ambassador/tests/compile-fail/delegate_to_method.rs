@@ -23,10 +23,11 @@ struct Wrap<X>(X);
 
 #[delegate_to_methods]
 #[delegate(MyTrait, target_owned = "inner", target_ref = "inner_ref")]
+//~^ Error target methods have different return types
 #[delegate(MyTrait, target_owned = "inner_ref", target_ref = "inner_ref")]
 //~^ Error method needs to have a receiver of type "self"
 #[delegate(MyTrait, target_owned = "inner", target_ref = "fail1")]
-//~^ impl block doesn't have any valid methods with this name
+//~^ Error Note: method used in #[delegate] attribute
 #[delegate(MyTrait)] //~ Error no targets were specified
 impl<X> Wrap<X>
 where
@@ -39,7 +40,7 @@ where
     }
 
     fn inner_ref(&self) -> &X::Target {
-        //~^ Error target methods have different return types
+        //~^ Error Note: first return type defined here
         self.0.deref()
     }
 
@@ -48,6 +49,11 @@ where
     }
 
     fn fail1() -> u32 {
+        //~^ method must have a receiver
+        5
+    }
+
+    fn fail2() -> u32 {
         5
     }
 }

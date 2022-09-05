@@ -250,7 +250,7 @@ fn build_trait_items(
             let method_sig = replace_gen_idents(method_sig, gen_idents);
             (
                 {
-                    let field_ident = match receiver_type(original_method)? {
+                    let field_ident = match receiver_type(&original_method.sig)? {
                         ReceiverType::Owned => {
                             used_recievers.owned = true;
                             quote!(self.$($ident_owned)*)

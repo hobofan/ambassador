@@ -110,14 +110,6 @@ impl Display for ReceiverType {
     }
 }
 
-pub(crate) fn try_receiver_type(method: &syn::ImplItemMethod) -> Option<ReceiverType> {
-    match method.sig.receiver() {
-        Some(syn::FnArg::Receiver(r)) => Some(receiver_type_inner(r)),
-        Some(syn::FnArg::Typed(_)) => None,
-        None => None,
-    }
-}
-
 fn receiver_type_inner(r: &Receiver) -> ReceiverType {
     if r.reference.is_none() {
         ReceiverType::Owned
@@ -128,16 +120,13 @@ fn receiver_type_inner(r: &Receiver) -> ReceiverType {
     }
 }
 
-pub(crate) fn receiver_type(method: &syn::TraitItemMethod) -> Result<ReceiverType> {
-    match method.sig.receiver() {
+pub(crate) fn receiver_type(sig: &syn::Signature) -> Result<ReceiverType> {
+    match sig.receiver() {
         Some(syn::FnArg::Receiver(r)) => Ok(receiver_type_inner(r)),
         Some(syn::FnArg::Typed(t)) => error!(
             t.span(),
-            "Method's receiver type is not supported (must one of self, &self, or &mut self)"
+            "method's receiver type is not supported (must one of self, &self, or &mut self)"
         ),
-        None => error!(
-            method.sig.paren_token.span,
-            "Method in delegatable trait does not have a receiver"
-        ),
+        None => error!(sig.paren_token.span, "method must have a receiver"),
     }
 }
