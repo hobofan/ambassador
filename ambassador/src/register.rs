@@ -1,8 +1,8 @@
-use crate::util::{receiver_type, ReceiverType};
+use crate::util::{error, process_results, receiver_type, ReceiverType};
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens, TokenStreamExt};
-use syn::__private::TokenStream2;
+use syn::spanned::Spanned;
 use syn::{
     ConstParam, GenericParam, ItemTrait, LifetimeDef, TraitItem, TraitItemConst, TraitItemType,
     TypeParam,
@@ -22,7 +22,7 @@ struct UsedReceivers {
     ref_mut: bool,
 }
 
-fn compile_error_or_none(message: &str, return_cmp_err: bool) -> Option<TokenStream2> {
+fn compile_error_or_none(message: &str, return_cmp_err: bool) -> Option<TokenStream> {
     if return_cmp_err {
         Some(quote!(compile_error! {#message}))
     } else {
@@ -43,12 +43,15 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         ref_r: false,
         ref_mut: false,
     };
-    let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) = original_item
+    let iter = original_item
         .items
         .iter()
-        .map(|item| build_trait_items(item, trait_ident, &gen_idents, &mut used_recievers))
-        .multiunzip();
-
+        .map(|item| build_trait_items(item, trait_ident, &gen_idents, &mut used_recievers));
+    let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) =
+        match process_results(iter, |iter| iter.multiunzip()) {
+            Ok(tup) => tup,
+            Err(err) => return err.into_compile_error(),
+        };
     let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, original_item, &match_name);
     let gen_idents_pat: TokenStream = gen_idents.into_iter().map(|id| quote! {$ #id ,}).collect();
     let check_owned = compile_error_or_none(
@@ -213,9 +216,9 @@ fn build_trait_items(
     trait_ident: &Ident,
     gen_idents: &[&Ident],
     used_recievers: &mut UsedReceivers,
-) -> (TokenStream, TokenStream, TokenStream) {
+) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
     let gen_pat: TokenStream = gen_idents.iter().flat_map(|id| quote! {$#id,}).collect();
-    match original_item {
+    let res = match original_item {
         TraitItem::Const(TraitItemConst { ident, ty, .. }) => (
             quote! {
                 const #ident : #ty = <$ty as #trait_ident<#gen_pat>>::#ident;
@@ -247,7 +250,7 @@ fn build_trait_items(
             let method_sig = replace_gen_idents(method_sig, gen_idents);
             (
                 {
-                    let field_ident = match receiver_type(original_method) {
+                    let field_ident = match receiver_type(&original_method.sig)? {
                         ReceiverType::Owned => {
                             used_recievers.owned = true;
                             quote!(self.$($ident_owned)*)
@@ -290,8 +293,9 @@ fn build_trait_items(
                 },
             )
         }
-        _ => unimplemented!(),
-    }
+        _ => return error!(original_item.span(), "unsupported trait item"),
+    };
+    Ok(res)
 }
 
 fn build_method_invocation(

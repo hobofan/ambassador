@@ -23,7 +23,7 @@ impl Shout for Dog {
     }
 }
 
-#[derive(Delegate)] //~ ERROR proc-macro derive panicked
+#[derive(Delegate)] //~ ERROR No #[delegate] attribute specified
 pub enum Animals {
     Cat(Cat),
     Dog(Dog),

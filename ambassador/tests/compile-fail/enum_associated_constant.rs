@@ -26,9 +26,8 @@ pub enum Pet {
     Bird(Bird),
 }
 
-
-
 fn main() {
     println!("{}", Pet::NUM_LEGS) //~ ERROR erroneous constant used [const_err]
-    //~^ WARNING this was previously accepted by the compiler but is being phased out
+                                  //~^ WARNING this was previously accepted by the compiler but is being phased out
+                                  //~^^ Error evaluation of constant value failed [E0080]
 }
