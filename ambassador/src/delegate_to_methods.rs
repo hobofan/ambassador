@@ -148,8 +148,7 @@ fn search_methods<'a>(
         },
         Some(res) if res.receiver != receiver => error!(
             id.span(),
-            "method needs to have a receiver of type {}",
-            receiver
+            "method needs to have a receiver of type {}", receiver
         ),
         Some(res) => {
             res.used.set(true);

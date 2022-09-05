@@ -293,7 +293,7 @@ fn build_trait_items(
                 },
             )
         }
-        _ => error!(original_item.span(), "unsupported trait item")?,
+        _ => return error!(original_item.span(), "unsupported trait item"),
     };
     Ok(res)
 }

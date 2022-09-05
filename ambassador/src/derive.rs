@@ -39,12 +39,8 @@ fn try_info_from_data(span: Span, data: syn::Data) -> Result<DelegateImplementer
                 let mut it = n.fields.into_iter();
                 match it.next() {
                     None => error!(span, "enum variant has no fields"),
-                    Some(f) => {
-                        if it.count() != 0 {
-                            error!(span, "enum variant has multiple fields")?
-                        };
-                        Ok((n.ident, f.ty))
-                    }
+                    Some(_) if it.count() != 0 => error!(span, "enum variant has multiple fields"),
+                    Some(f) => Ok((n.ident, f.ty)),
                 }
             });
             let (variant_idents, mut variant_types): (Vec<_>, Vec<_>) =
@@ -81,12 +77,14 @@ fn try_info_from_data(span: Span, data: syn::Data) -> Result<DelegateImplementer
                 DelegateImplementerInfo::MultiFieldStruct { fields }
             }
         },
-        _ => error!(
-            span,
-            "ambassador currently only supports #[derive(Delegate)] for: \n\
+        _ => {
+            return error!(
+                span,
+                "ambassador currently only supports #[derive(Delegate)] for: \n\
              - single-field enums\n\
              - (tuple) structs"
-        )?,
+            )
+        }
     };
     Ok(res)
 }
@@ -179,10 +177,10 @@ fn delegate_single_attr(
                 #macro_name!{body_self(<#trait_generics_p>)}
             }
         },
-        (Field(field), Enum {..}) => error!(
+        (Field(field), Enum {..}) => return error!(
             field.span(),
             "\"target\" value on #[delegate] attribute can not be specified for enums"
-        )?,
+        ),
         (TrgNone, Enum {variant_idents, first_type, other_types}) => {
             if !args.inhibit_automatic_where_clause {
                 add_auto_where_clause(&mut where_clause, &trait_path_full, first_type);
@@ -209,10 +207,10 @@ fn delegate_single_attr(
                 }
             }
         }
-        (Field(field), SingleFieldStruct {..}) => error!(
+        (Field(field), SingleFieldStruct {..}) => return error!(
             field.span(),
             "\"target\" value on #[delegate] attribute can not be specified for structs with a single field"
-        )?,
+        ),
         (TrgNone, SingleFieldStruct {field_ident, field_type}) => {
             if !args.inhibit_automatic_where_clause {
                 add_auto_where_clause(&mut where_clause, &trait_path_full, field_type);
@@ -224,10 +222,10 @@ fn delegate_single_attr(
                 }
             }
         }
-        (TrgNone, MultiFieldStruct {..}) => error!(
+        (TrgNone, MultiFieldStruct {..}) => return error!(
             span,
             "\"target\" value on #[delegate] attribute has to be specified for structs with multiple fields"
-        )?,
+        ),
         (Field(field), MultiFieldStruct {fields}) => {
             let field = get_field(field, fields)?;
             let field_ident = &field.0;

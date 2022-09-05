@@ -113,7 +113,7 @@ pub(super) fn trait_info(trait_path_full: &syn::Path) -> Result<(&Ident, impl To
     let trait_generics = match &trait_segment.arguments {
         PathArguments::None => None,
         PathArguments::AngleBracketed(seg) => Some(super::util::TailingPunctuated(&seg.args)),
-        _ => error!(trait_path_full.span(), "cannot delegate to Fn* traits")?,
+        _ => return error!(trait_path_full.span(), "cannot delegate to Fn* traits"),
     };
     Ok((trait_ident, trait_generics))
 }
