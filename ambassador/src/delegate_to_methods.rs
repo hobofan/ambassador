@@ -132,7 +132,6 @@ fn search_methods<'a>(
         invalid_methods,
         ..
     } = implementer;
-    println!("{}", methods.len());
     match methods.iter().find(|m| &m.name == id) {
         None => match invalid_methods.iter().find(|(name, _)| name == id) {
             Some((_, err)) => {
@@ -146,13 +145,16 @@ fn search_methods<'a>(
                 "impl block doesn't have any methods with this name"
             ),
         },
-        Some(res) if res.receiver != receiver => error!(
-            id.span(),
-            "method needs to have a receiver of type {}", receiver
-        ),
         Some(res) => {
             res.used.set(true);
-            Ok(&res.ret)
+            if res.receiver != receiver {
+                error!(
+                    id.span(),
+                    "method needs to have a receiver of type {}", receiver
+                )
+            } else {
+                Ok(&res.ret)
+            }
         }
     }
 }
@@ -222,12 +224,9 @@ fn check_for_method_impls_and_extras(impl_items: &[syn::ImplItem]) -> Result<()>
 //   - all the methods provided are actually referenced in the `delegate` attributes on the impl
 fn check_for_unused_methods(other_errs: Result<()>, methods: &[MethodInfo]) -> Result<()> {
     let iter = methods.iter().filter_map(|m| {
-        print!("{}", m.name);
         if m.used.get() {
-            println!("used");
             None
         } else {
-            println!("unused");
             Some(syn::Error::new(
                 m.name.span(),
                 "This method is not used by any `delegate` attributes; please remove it",
@@ -289,7 +288,7 @@ pub fn delegate_macro(input: TokenStream, keep_impl_block: bool) -> TokenStream 
             let invalid_err_iter = implementer.invalid_methods.into_iter().map(|(_, err)| err);
             let invalid_err = fold_errors(unused_err, invalid_err_iter);
             if let Err(err) = invalid_err {
-                return err.into_compile_error().into();
+                res.extend(err.into_compile_error());
             }
         }
     }
