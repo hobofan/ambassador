@@ -132,7 +132,6 @@ fn search_methods<'a>(
         invalid_methods,
         ..
     } = implementer;
-    println!("{}", methods.len());
     match methods.iter().find(|m| &m.name == id) {
         None => match invalid_methods.iter().find(|(name, _)| name == id) {
             Some((_, err)) => {
@@ -222,12 +221,9 @@ fn check_for_method_impls_and_extras(impl_items: &[syn::ImplItem]) -> Result<()>
 //   - all the methods provided are actually referenced in the `delegate` attributes on the impl
 fn check_for_unused_methods(other_errs: Result<()>, methods: &[MethodInfo]) -> Result<()> {
     let iter = methods.iter().filter_map(|m| {
-        print!("{}", m.name);
         if m.used.get() {
-            println!("used");
             None
         } else {
-            println!("unused");
             Some(syn::Error::new(
                 m.name.span(),
                 "This method is not used by any `delegate` attributes; please remove it",
