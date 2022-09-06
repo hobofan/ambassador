@@ -145,13 +145,16 @@ fn search_methods<'a>(
                 "impl block doesn't have any methods with this name"
             ),
         },
-        Some(res) if res.receiver != receiver => error!(
-            id.span(),
-            "method needs to have a receiver of type {}", receiver
-        ),
         Some(res) => {
             res.used.set(true);
-            Ok(&res.ret)
+            if res.receiver != receiver {
+                error!(
+                    id.span(),
+                    "method needs to have a receiver of type {}", receiver
+                )
+            } else {
+                Ok(&res.ret)
+            }
         }
     }
 }
@@ -285,7 +288,7 @@ pub fn delegate_macro(input: TokenStream, keep_impl_block: bool) -> TokenStream 
             let invalid_err_iter = implementer.invalid_methods.into_iter().map(|(_, err)| err);
             let invalid_err = fold_errors(unused_err, invalid_err_iter);
             if let Err(err) = invalid_err {
-                return err.into_compile_error().into();
+                res.extend(err.into_compile_error());
             }
         }
     }

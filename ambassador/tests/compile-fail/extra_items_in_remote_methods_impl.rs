@@ -20,6 +20,7 @@ impl MyTrait for u32 {
 
 #[delegate_to_remote_methods]
 #[delegate(MyTrait, target_ref = "deref", target_mut = "deref_mut")]
+//~^ no method named `deref` found for reference `&Box<X>` in the current scope
 impl<X: ?Sized + MyTrait> Box<X> {
     fn deref(&self) -> &X;
     fn deref_mut(&mut self) -> &mut X;
