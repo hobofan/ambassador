@@ -12,9 +12,9 @@ pub trait Map {
     type V;
 }
 
-#[delegatable_trait] //~ ERROR function cannot return without recursing [unconditional_recursion]
+#[delegatable_trait]
 pub trait Get<Q: ?Sized>: Map {
-    fn get(&self, k: &Q) -> Option<&Self::V>;
+    fn get(&self, k: &Q) -> Option<&Self::V>; //~ ERROR function cannot return without recursing [unconditional_recursion]
 }
 
 impl<K, V, S> Map for HashMap<K, V, S> {

@@ -91,7 +91,7 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
                 #check_ref_mut
             };
             (check_ref_mut($($_:tt)+)) => {};
-            (body_enum(<#gen_matcher>, $ty:ty, ($( $other_tys:ty ),+), ($( $variants:path ),+))) => {
+            (body_enum(<#gen_matcher>, $ty:ty, ($( $other_tys:ty ),*), ($( $variants:path ),+))) => {
                 #(#enum_items)*
             };
             (body_self(<#gen_matcher>)) => {
