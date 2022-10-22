@@ -28,7 +28,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - stable # It's useful to test applications of these macros to newer features so a 1.53 test doesn't work
+          - beta # It's useful to test applications of these macros to newer features so a 1.53 test doesn't work (beta to test GATs)
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
