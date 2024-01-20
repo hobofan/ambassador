@@ -50,7 +50,7 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
     let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) =
         match process_results(iter, |iter| iter.multiunzip()) {
             Ok(tup) => tup,
-            Err(err) => return err.into_compile_error(),
+            Err(err) => return err.to_compile_error(),
         };
     let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, original_item, &match_name);
     let gen_idents_pat: TokenStream = gen_idents.into_iter().map(|id| quote! {$ #id ,}).collect();

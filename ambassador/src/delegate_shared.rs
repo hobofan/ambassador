@@ -9,8 +9,8 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::{
-    parse_quote, Error, GenericParam, Generics, ImplGenerics, LitBool, LitStr, PathArguments,
-    Result, Token, WhereClause, WherePredicate,
+    parse_quote, GenericParam, Generics, ImplGenerics, LitBool, LitStr, PathArguments, Result,
+    Token, WhereClause, WherePredicate,
 };
 
 pub(super) trait DelegateTarget: Default {
@@ -97,14 +97,14 @@ pub(super) fn delegate_macro<I>(
         return error!(
             proc_macro2::Span::call_site(),
             "No #[delegate] attribute specified. If you want to delegate an implementation of trait `SomeTrait` add the attribute:\n#[delegate(SomeTrait)]"
-        ).unwrap_or_else(Error::into_compile_error);
+        ).unwrap_or_else(|x| x.to_compile_error());
     }
 
     let iter = delegate_attributes
         .into_iter()
         .map(|attr| delegate_single(input, attr));
     let res = process_results(iter, |iter| iter.flatten().collect());
-    res.unwrap_or_else(Error::into_compile_error)
+    res.unwrap_or_else(|x| x.to_compile_error())
 }
 
 pub(super) fn trait_info(trait_path_full: &syn::Path) -> Result<(&Ident, impl ToTokens + '_)> {

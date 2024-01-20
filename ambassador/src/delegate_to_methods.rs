@@ -288,7 +288,7 @@ pub fn delegate_macro(input: TokenStream, keep_impl_block: bool) -> TokenStream 
             let invalid_err_iter = implementer.invalid_methods.into_iter().map(|(_, err)| err);
             let invalid_err = fold_errors(unused_err, invalid_err_iter);
             if let Err(err) = invalid_err {
-                res.extend(err.into_compile_error());
+                res.extend(err.to_compile_error());
             }
         }
     }

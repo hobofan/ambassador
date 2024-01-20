@@ -146,7 +146,7 @@ pub fn delegate_macro(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let info = match try_info_from_data(input.span(), input.data) {
         Ok(info) => info,
-        Err(err) => return err.into_compile_error().into(),
+        Err(err) => return err.to_compile_error().into(),
     };
     let implementer = DelegateImplementer {
         info,
