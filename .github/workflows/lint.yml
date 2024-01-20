@@ -8,16 +8,21 @@ jobs:
     strategy:
       matrix:
         rust:
-          - stable
           - 1.53.0
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
+          toolchain: nightly
+          override: false
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
           toolchain: ${{ matrix.rust }}
           override: true
       - run: rustup component add rustfmt
+      - run: cargo +nightly update -Z minimal-versions
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -29,16 +34,21 @@ jobs:
     strategy:
       matrix:
         rust:
-          - stable
           - 1.53.0
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
+          toolchain: nightly
+          override: false
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
           toolchain: ${{ matrix.rust }}
           override: true
       - run: rustup component add clippy
+      - run: cargo +nightly update -Z minimal-versions
       - uses: actions-rs/cargo@v1
         with:
           command: clippy

@@ -9,15 +9,20 @@ jobs:
     strategy:
       matrix:
         rust:
-          - stable
           - 1.53.0
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
+          toolchain: nightly
+          override: false
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
           toolchain: ${{ matrix.rust }}
           override: true
+      - run: cargo +nightly update -Z minimal-versions
       - uses: actions-rs/cargo@v1
         with:
           command: check
@@ -28,7 +33,10 @@ jobs:
     strategy:
       matrix:
         rust:
-          - beta # It's useful to test applications of these macros to newer features so a 1.53 test doesn't work (beta to test GATs)
+          - 1.75.0
+          # It's useful to test applications of these macros to newer features so using 1.53 for tests doesn't work
+          # This needs to be locked to a specific version of Rust since the exact error messages may change
+          # When switching this Rust version make sure to also update tests to use newer error messages if applicable
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
