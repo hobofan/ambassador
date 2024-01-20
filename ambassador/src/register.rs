@@ -210,6 +210,19 @@ fn replace_gen_idents(tokens: TokenStream, gen_idents: &[&Ident]) -> TokenStream
     }
     res
 }
+fn build_method(
+    method_sig: &TokenStream,
+    method_invocation: TokenStream,
+    extr_attrs: TokenStream,
+) -> TokenStream {
+    quote! {
+        #[inline]
+        #extr_attrs
+        #method_sig {
+            #method_invocation
+        }
+    }
+}
 
 fn build_trait_items(
     original_item: &TraitItem,
@@ -264,31 +277,25 @@ fn build_trait_items(
                         }
                     };
                     let method_invocation = build_method_invocation(original_method, &field_ident);
-                    quote! {
-                        #method_sig {
-                            #method_invocation
-                        }
-                    }
+                    build_method(&method_sig, method_invocation, quote!())
                 },
                 {
                     let method_invocation =
                         build_method_invocation(original_method, &quote!(inner));
-                    quote! {
-                        #method_sig {
-                            match self {
-                                $($variants(inner) => #method_invocation),*
-                            }
+                    let method_invocation = quote! {
+                        match self {
+                            $($variants(inner) => #method_invocation),*
                         }
-                    }
+                    };
+                    build_method(&method_sig, method_invocation, quote!())
                 },
                 {
                     let method_invocation = build_method_invocation(original_method, &quote!(self));
-                    quote! {
-                        #[deny(unconditional_recursion)]
-                        #method_sig {
-                            #method_invocation
-                        }
-                    }
+                    build_method(
+                        &method_sig,
+                        method_invocation,
+                        quote!(#[deny(unconditional_recursion)]),
+                    )
                 },
             )
         }

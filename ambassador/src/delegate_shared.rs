@@ -100,9 +100,7 @@ pub(super) fn delegate_macro<I>(
         ).unwrap_or_else(|x| x.to_compile_error());
     }
 
-    let iter = delegate_attributes
-        .into_iter()
-        .map(|attr| delegate_single(input, attr));
+    let iter = delegate_attributes.map(|attr| delegate_single(input, attr));
     let res = process_results(iter, |iter| iter.flatten().collect());
     res.unwrap_or_else(|x| x.to_compile_error())
 }
