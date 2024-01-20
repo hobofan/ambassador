@@ -321,7 +321,12 @@ fn build_method_invocation(
 
     let generics = method_sig.generics.split_for_impl().1;
     let turbofish = generics.as_turbofish();
+    let post = if original_method.sig.asyncness.is_some() {
+        quote!(.await)
+    } else {
+        quote!()
+    };
 
-    let method_invocation = quote! { #field_ident.#method_ident #turbofish(#argument_list) };
+    let method_invocation = quote! { #field_ident.#method_ident #turbofish(#argument_list) #post };
     method_invocation
 }
