@@ -312,6 +312,9 @@ fn build_method_invocation(
         })
         .collect();
 
-    let method_invocation = quote! { #field_ident.#method_ident(#argument_list) };
+    let generics = method_sig.generics.split_for_impl().1;
+    let turbofish = generics.as_turbofish();
+
+    let method_invocation = quote! { #field_ident.#method_ident #turbofish(#argument_list) };
     method_invocation
 }
