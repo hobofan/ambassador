@@ -4,7 +4,7 @@ name: Check & Test
 
 jobs:
   check:
-    name: Clippy
+    name: Check
     runs-on: ubuntu-latest
     strategy:
       matrix:
