@@ -137,7 +137,7 @@ fn param_to_matcher(param: &GenericParam) -> TokenStream {
             let ident = &lifetime.ident;
             quote!($ #ident : lifetime,)
         }
-        GenericParam::Const(ConstParam { ident, .. }) => quote!($ #ident : ident,),
+        GenericParam::Const(ConstParam { ident, .. }) => quote!($ #ident : expr,),
     }
 }
 
@@ -181,7 +181,7 @@ fn make_assoc_ty_bound(
     }
 }
 
-// Replaces the identifiers in gen_idents with there macro args (X => $X) ('a => $a)
+// Replaces the identifiers in gen_idents with their macro args (X => $X) ('a => $a)
 fn replace_gen_idents(tokens: TokenStream, gen_idents: &[&Ident]) -> TokenStream {
     let mut res = TokenStream::new();
     let mut apostrophe: Option<proc_macro2::Punct> = None;
@@ -217,6 +217,7 @@ fn build_method(
 ) -> TokenStream {
     quote! {
         #[inline]
+        #[allow(unused_braces)]
         #extr_attrs
         #method_sig {
             #method_invocation
