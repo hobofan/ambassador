@@ -1,11 +1,11 @@
 use crate::util::{error, process_results, receiver_type, ReceiverType};
 use itertools::Itertools;
-use proc_macro2::{Ident, TokenStream, TokenTree};
+use proc_macro2::{Delimiter, Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::spanned::Spanned;
 use syn::{
-    ConstParam, GenericParam, ItemTrait, LifetimeDef, TraitItem, TraitItemConst, TraitItemType,
-    TypeParam,
+    AttrStyle, Attribute, ConstParam, GenericParam, ItemTrait, LifetimeDef, TraitItem,
+    TraitItemConst, TraitItemType, TypeParam, Visibility,
 };
 
 pub(crate) fn macro_name(trait_ident: &Ident) -> Ident {
@@ -20,6 +20,47 @@ struct UsedReceivers {
     owned: bool,
     ref_r: bool,
     ref_mut: bool,
+}
+
+#[derive(Default)]
+struct CfgNames(Vec<(TokenStream, Ident)>);
+
+impl CfgNames {
+    fn get_macro(&mut self, pred: TokenStream) -> &Ident {
+        let fresh = self.0.len();
+        self.0.push((pred, quote::format_ident!("cfg{}", fresh)));
+        &self.0.last().unwrap().1
+    }
+
+    fn definitions(&self, mod_name: &Ident, vis: &Visibility) -> TokenStream {
+        let iter = self.0.iter().map(|(cfg, name)| {
+            let base_macro_name = quote::format_ident!("_{}_{}", mod_name, name);
+            quote! {
+                #[cfg(#cfg)]
+                #[doc(hidden)]
+                #[macro_export]
+                macro_rules! #base_macro_name {
+                    ($($t:tt)*) => {$($t)*};
+                }
+
+                #[cfg(not(#cfg))]
+                #[doc(hidden)]
+                #[macro_export]
+                macro_rules! #base_macro_name {
+                    ($($t:tt)*) => {};
+                }
+
+                pub use #base_macro_name as #name;
+            }
+        });
+        quote! {
+            #[doc(hidden)]
+            #[allow(non_snake_case)]
+            #vis mod #mod_name {
+                #(#iter)*
+            }
+        }
+    }
 }
 
 fn compile_error_or_none(message: &str, return_cmp_err: bool) -> Option<TokenStream> {
@@ -44,10 +85,16 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         ref_r: false,
         ref_mut: false,
     };
-    let iter = original_item
-        .items
-        .iter()
-        .map(|item| build_trait_items(item, trait_ident, &gen_idents, &mut used_recievers));
+    let mut cfg_names = CfgNames::default();
+    let iter = original_item.items.iter().map(|item| {
+        build_trait_items(
+            item,
+            trait_ident,
+            &gen_idents,
+            &mut used_recievers,
+            &mut cfg_names,
+        )
+    });
     let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) =
         match process_results(iter, |iter| iter.multiunzip()) {
             Ok(tup) => tup,
@@ -68,6 +115,7 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         used_recievers.ref_mut,
     );
     let vis = &original_item.vis;
+    let cfg_definitions = cfg_names.definitions(&macro_name, vis);
     quote! {
         #[macro_export]
         #[doc(hidden)]
@@ -107,6 +155,8 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         #[doc(inline)]
         #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
         #vis use #macro_def as #macro_name;
+
+        #cfg_definitions
     }
 }
 
@@ -213,14 +263,32 @@ fn build_method(
     }
 }
 
+fn extract_cfg(attrs: &[Attribute]) -> Option<TokenStream> {
+    let mut iter = attrs
+        .iter()
+        .filter(|attr| attr.style == AttrStyle::Outer && attr.path.is_ident("cfg"))
+        .filter_map(|attr| match attr.tokens.clone().into_iter().next()? {
+            TokenTree::Group(x) if x.delimiter() == Delimiter::Parenthesis => Some(x.stream()),
+            _ => None,
+        });
+    let e0 = iter.next()?;
+    if let Some(e1) = iter.next() {
+        let iter = IntoIterator::into_iter([e0, e1]).chain(iter);
+        Some(quote!(all(#(#iter)*)))
+    } else {
+        Some(e0)
+    }
+}
+
 fn build_trait_items(
     original_item: &TraitItem,
     trait_ident: &Ident,
     gen_idents: &[&Ident],
     used_recievers: &mut UsedReceivers,
+    cfg_names: &mut CfgNames,
 ) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
     let gen_pat: TokenStream = gen_idents.iter().flat_map(|id| quote! {$#id,}).collect();
-    let res = match original_item {
+    let mut res = match original_item {
         TraitItem::Const(TraitItemConst { ident, ty, .. }) => (
             quote! {
                 const #ident : #ty = <$ty as #trait_ident<#gen_pat>>::#ident;
@@ -290,6 +358,18 @@ fn build_trait_items(
         }
         _ => return error!(original_item.span(), "unsupported trait item"),
     };
+    let attrs: &[Attribute] = match original_item {
+        TraitItem::Const(c) => &c.attrs,
+        TraitItem::Type(t) => &t.attrs,
+        TraitItem::Method(m) => &m.attrs,
+        _ => &[],
+    };
+    if let Some(pred) = extract_cfg(attrs) {
+        let wrapper_macro = cfg_names.get_macro(pred);
+        let macro_name = macro_name(trait_ident);
+        let wrap = |x: TokenStream| quote!(#macro_name::#wrapper_macro!{#x});
+        res = (wrap(res.0), wrap(res.1), wrap(res.2));
+    }
     Ok(res)
 }
 
