@@ -35,7 +35,6 @@
 //!
 //! #[delegatable_trait]
 //! pub trait Map {
-//!     type K;
 //!     type V;
 //! }
 //!
@@ -45,12 +44,10 @@
 //! }
 //!
 //! impl<K, V, S> Map for HashMap<K, V, S>  {
-//!     type K = K;
 //!     type V = V;
 //! }
 //!
 //! impl<K, V> Map for BTreeMap<K, V>  {
-//!     type K = K;
 //!     type V = V;
 //! }
 //!
@@ -66,7 +63,7 @@
 //!
 //! #[derive(Delegate)]
 //! #[delegate(Map)]
-//! #[delegate(Get<X>, generics = "X", where = "X: ?Sized, B: Map<K=A::K, V=A::V>")]  //auto where clause misses required on super trait
+//! #[delegate(Get<X>, generics = "X", where = "X: ?Sized, B: Map<V=A::V>")]  //auto where clause misses required on super trait
 //! pub enum Either<A, B> {
 //!     Left(A),
 //!     Right(B),
@@ -74,30 +71,63 @@
 //!
 //! #[delegate_to_remote_methods]
 //! #[delegate(Map, target_ref = "deref")]
-//! impl<M: ?Sized + Map> Map for Box<M> {
+//! #[delegate(Get<X>, target_ref = "deref", generics = "X", where = "X: ?Sized")]
+//! impl<M: ?Sized> Box<M> {
 //!     fn deref(&self) -> &M;
 //! }
 //!
-//! fn takes_map(_m: &impl Map<K = &'static str, V = u32>) { }
-//!
 //! pub fn main() {
-//!     let my_map: Either<HashMap<&'static str, u32>, BTreeMap<&'static str, u32>> = Either::Left([("a", 1)].into());
+//!     let x: HashMap<&'static str, u32> = [("a", 1)].into();
+//!     let my_map: Either<Box<dyn Get<str, V = u32>>, BTreeMap<&'static str, u32>> = Either::Left(Box::new(x));
 //!     assert_eq!(my_map.get("a"), Some(&1));
-//!
-//!     let boxed: Box<dyn Map<K = &'static str, V = u32>> = Box::new(my_map);
-//!     takes_map(&boxed);
 //! }
 //! ```
 //!
+//! # Cross module uses
+//! Modules using delegateable traits should add `use <MODULE PATH>::ambassador_impl_<TRAIT NAME>;`
+//! where `<MODULE PATH>` is the path to the module which used either
+//! [`macro@delegatable_trait`] or [`macro@delegatable_trait_remote`]
+//! ### Example
+//! ```
+//! mod m{
+//!     pub mod m1 {
+//!         use ambassador::delegatable_trait;
+//!         #[delegatable_trait]
+//!         pub trait Shout {
+//!             fn shout(&self);
+//!         }
+//!     }
+//!
+//!     mod m2 {
+//!         use ambassador::Delegate;
+//!         use super::m1::{Shout, ambassador_impl_Shout};
+//!
+//!         #[derive(Delegate)]
+//!         #[delegate(Shout)]
+//!         struct Wrap<X>(X);
+//!     }
+//! }
+//!
+//! ```
+//!
 //! # Backwards Compatibility
+//! ## 0.3.x -> 0.4.x
+//! ### Creating delegateable traits
+//! Delagatable trait macros `ambassador_impl_Trait` are no longer exported at the crate root, and
+//! are instead exported in the module where [`macro@delegatable_trait`] or
+//! [`macro@delegatable_trait_remote`] are used. If these traits are public then upgrading is also
+//! a breaking change for users of your library. The "backward_compatible" is also removed.
+//! ### Using delegateable traits
+//! Switching versions does not affect usages of delegateable traits
+//! ## 0.2.x -> 0.3.x
 //! Since delegateable traits from one crate can be used in anther crate backwards compatibility of switching to 0.3.x depends on the use case
-//! ## Self Contained Crate
+//! ### Self Contained Crate
 //! Switching to 0.3.x should just work,
 //! in this case it safe to disable the "backward_compatible" feature
-//! ## Library with public delegatable traits
+//! ### Library with public delegatable traits
 //! Make sure use the "backward_compatible" feature (enabled by default),
 //! this makes sure users of your library using an older version of ambassador aren't affected by the upgrade
-//! ## Users of a library with public delegatable traits
+//! ### Users of a library with public delegatable traits
 //! Try to use the same version of ambassador as the library you're using
 
 extern crate core;

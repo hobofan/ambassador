@@ -12,10 +12,6 @@ readme = "README.md"
 [lib]
 proc-macro = true
 
-[features]
-default = ["backward_compatible"]
-backward_compatible = []
-
 [dependencies]
 syn = { version = "1.0.25", features = ["full", "extra-traits"] }
 quote = "1.0.2"

@@ -1,6 +1,5 @@
 extern crate ambassador;
 
-#[macro_use]
 mod baz {
     use ambassador::delegatable_trait;
 
@@ -11,7 +10,7 @@ mod baz {
 }
 
 mod bar {
-    use super::Shout;
+    use super::{ambassador_impl_Shout, Shout};
     use ambassador::Delegate;
 
     pub struct Cat;
@@ -39,7 +38,7 @@ mod bar {
 }
 
 use bar::{Animals, Cat};
-use baz::Shout;
+use baz::{ambassador_impl_Shout, Shout};
 
 pub fn main() {
     let foo_animal = Animals::Cat(Cat);
