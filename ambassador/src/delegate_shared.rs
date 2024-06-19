@@ -102,7 +102,7 @@ pub(super) fn delegate_macro<I>(
 
     let iter = delegate_attributes.map(|attr| delegate_single(input, attr));
     let res = iter
-        .map(|x| x.unwrap_or_else(syn::Error::into_compile_error))
+        .map(|x| x.unwrap_or_else(|err| err.to_compile_error()))
         .flatten()
         .collect();
     res
