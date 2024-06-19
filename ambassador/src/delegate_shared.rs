@@ -1,4 +1,4 @@
-use crate::util::{error, process_results};
+use crate::util::error;
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::ToTokens;
@@ -101,8 +101,11 @@ pub(super) fn delegate_macro<I>(
     }
 
     let iter = delegate_attributes.map(|attr| delegate_single(input, attr));
-    let res = process_results(iter, |iter| iter.flatten().collect());
-    res.unwrap_or_else(|x| x.to_compile_error())
+    let res = iter
+        .map(|x| x.unwrap_or_else(syn::Error::into_compile_error))
+        .flatten()
+        .collect();
+    res
 }
 
 pub(super) fn trait_info(trait_path_full: &syn::Path) -> Result<(&Ident, impl ToTokens + '_)> {

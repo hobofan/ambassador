@@ -126,18 +126,22 @@ impl delegate_shared::DelegateTarget for DelegateTarget {
 
 type DelegateArgs = delegate_shared::DelegateArgs<DelegateTarget>;
 
+fn unknown_field<X>(target: &syn::Member) -> Result<X> {
+    error!(
+        target.span(),
+        "Unknown field specified as \"target\" value in #[delegate] attribute"
+    )
+}
+
 /// Select the correct field_ident based on the `target`.
-pub fn get_field<'a>(
+fn get_field<'a>(
     target: &syn::Member,
     field_idents: &'a [(syn::Member, syn::Type)],
 ) -> Result<&'a (syn::Member, syn::Type)> {
     let field = field_idents.iter().find(|n| n.0 == *target);
     match field {
         Some(field) => Ok(field),
-        None => error!(
-            target.span(),
-            "Unknown field specified as \"target\" value in #[delegate] attribute"
-        ),
+        None => unknown_field(target),
     }
 }
 
@@ -207,11 +211,13 @@ fn delegate_single_attr(
                 }
             }
         }
-        (Field(field), SingleFieldStruct {..}) => return error!(
-            field.span(),
-            "\"target\" value on #[delegate] attribute can not be specified for structs with a single field"
-        ),
-        (TrgNone, SingleFieldStruct {field_ident, field_type}) => {
+        (trg, SingleFieldStruct {field_ident, field_type}) => {
+            match trg {
+                Field(f) if f != field_ident => {
+                    unknown_field(&f)?;
+                }
+                _ => {}
+            }
             if !args.inhibit_automatic_where_clause {
                 add_auto_where_clause(&mut where_clause, &trait_path_full, field_type);
             }

@@ -780,8 +780,5 @@ pub fn delegatable_trait_remote(_attr: TokenStream, item: TokenStream) -> TokenS
     let original_item: syn::ItemTrait = syn::parse(item).unwrap();
     let register_trait = build_register_trait(&original_item);
 
-    let expanded = quote! {
-        #register_trait
-    };
-    TokenStream::from(expanded)
+    TokenStream::from(register_trait)
 }
