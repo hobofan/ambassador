@@ -214,7 +214,7 @@ fn delegate_single_attr(
         (trg, SingleFieldStruct {field_ident, field_type}) => {
             match trg {
                 Field(f) if f != field_ident => {
-                    unknown_field(&f)?;
+                    unknown_field(f)?;
                 }
                 _ => {}
             }
