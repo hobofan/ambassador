@@ -33,6 +33,7 @@ fn compile_error_or_none(message: &str, return_cmp_err: bool) -> Option<TokenStr
 pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
     let trait_ident = &original_item.ident;
     let macro_name = macro_name(trait_ident);
+    let macro_def = quote::format_ident!("_{}", macro_name);
     let match_name = match_name(trait_ident);
     let gen_params = &original_item.generics.params;
     let gen_idents: Vec<_> = gen_params.iter().map(param_to_ident).collect();
@@ -66,10 +67,11 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         "target_mut was not specified but was needed",
         used_recievers.ref_mut,
     );
-    let mut register_trait = quote! {
-        #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
+    let vis = &original_item.vis;
+    quote! {
         #[macro_export]
-        macro_rules! #macro_name {
+        #[doc(hidden)]
+        macro_rules! #macro_def {
             (body_struct(<#gen_matcher>, $ty:ty, $field_ident:tt)) => {
                 #macro_name!{body_struct(<#gen_idents_pat>, $ty, ($field_ident), ($field_ident), ($field_ident))}
             };
@@ -102,24 +104,10 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
             };
         }
 
-
-    };
-    if cfg!(feature = "backward_compatible") {
-        let enum_name = quote::format_ident!("{}_body_enum", macro_name);
-        let struct_name = quote::format_ident!("{}_body_single_struct", macro_name);
-        let legacy_macros = quote! {
-            #[macro_export]
-            macro_rules! #struct_name {
-                ($field_ident:tt) => {#macro_name!{body_struct(<>, (), $field_ident)}};
-            }
-            #[macro_export]
-            macro_rules! #enum_name {
-                ($( $variants:path ),+) => {#macro_name!{body_enum(<>, (), (()), ($( $variants),*))}};
-            }
-        };
-        register_trait.extend(legacy_macros);
+        #[doc(inline)]
+        #[doc = concat!("A macro to be used by [`ambassador::Delegate`] to delegate [`", stringify!(#trait_ident), "`]")]
+        #vis use #macro_def as #macro_name;
     }
-    register_trait
 }
 
 fn param_to_ident(param: &GenericParam) -> &Ident {

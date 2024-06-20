@@ -8,7 +8,7 @@ pub trait Shout {
 }
 
 mod bar {
-    use super::Shout;
+    use super::{ambassador_impl_Shout, Shout};
     use ambassador::Delegate;
 
     pub struct Cat;
