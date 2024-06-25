@@ -26,6 +26,8 @@ cargo add ambassador
 
 ## General Usage
 
+More examples are also available https://github.com/hobofan/ambassador/tree/master/ambassador/tests/run-pass
+
 ### `#[delegatable_trait]`
 
 First we need to make our trait available for delegation by adding a `#[delegatable_trait]` attribute to it (this also makes your trait delegatable in other crates):
