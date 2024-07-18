@@ -343,14 +343,18 @@ fn build_method_invocation(
         })
         .collect();
 
-    let generics = method_sig.generics.split_for_impl().1;
-    let turbofish = generics.as_turbofish();
+    let generics = method_sig.generics.params.iter().filter_map(|x| match x {
+        GenericParam::Type(t) => Some(&t.ident),
+        GenericParam::Lifetime(_) => None,
+        GenericParam::Const(c) => Some(&c.ident),
+    });
     let post = if original_method.sig.asyncness.is_some() {
         quote!(.await)
     } else {
         quote!()
     };
 
-    let method_invocation = quote! { #field_ident.#method_ident #turbofish(#argument_list) #post };
+    let method_invocation =
+        quote! { #field_ident.#method_ident::<#(#generics,)*>(#argument_list) #post };
     method_invocation
 }
