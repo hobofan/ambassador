@@ -16,12 +16,6 @@ pub(crate) fn match_name(trait_ident: &Ident) -> Ident {
     quote::format_ident!("Match{}", trait_ident)
 }
 
-struct UsedReceivers {
-    owned: bool,
-    ref_r: bool,
-    ref_mut: bool,
-}
-
 #[derive(Default)]
 struct CfgNames(Vec<(TokenStream, Ident)>);
 
@@ -63,14 +57,6 @@ impl CfgNames {
     }
 }
 
-fn compile_error_or_none(message: &str, return_cmp_err: bool) -> Option<TokenStream> {
-    if return_cmp_err {
-        Some(quote!(compile_error! {#message}))
-    } else {
-        None
-    }
-}
-
 pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
     let trait_ident = &original_item.ident;
     let macro_name = macro_name(trait_ident);
@@ -80,21 +66,11 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
     let gen_idents: Vec<_> = gen_params.iter().map(param_to_ident).collect();
     let gen_matcher: TokenStream = gen_params.iter().map(param_to_matcher).collect();
 
-    let mut used_recievers = UsedReceivers {
-        owned: false,
-        ref_r: false,
-        ref_mut: false,
-    };
     let mut cfg_names = CfgNames::default();
-    let iter = original_item.items.iter().map(|item| {
-        build_trait_items(
-            item,
-            trait_ident,
-            &gen_idents,
-            &mut used_recievers,
-            &mut cfg_names,
-        )
-    });
+    let iter = original_item
+        .items
+        .iter()
+        .map(|item| build_trait_items(item, trait_ident, &gen_idents, &mut cfg_names));
     let (struct_items, enum_items, self_items): (Vec<_>, Vec<_>, Vec<_>) =
         match process_results(iter, |iter| iter.multiunzip()) {
             Ok(tup) => tup,
@@ -102,18 +78,6 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
         };
     let assoc_ty_bounds = make_assoc_ty_bound(&original_item.items, original_item, &match_name);
     let gen_idents_pat: TokenStream = gen_idents.into_iter().map(|id| quote! {$ #id ,}).collect();
-    let check_owned = compile_error_or_none(
-        "target_owned was not specified but was needed",
-        used_recievers.owned,
-    );
-    let check_ref = compile_error_or_none(
-        "target_ref was not specified but was needed",
-        used_recievers.ref_r,
-    );
-    let check_ref_mut = compile_error_or_none(
-        "target_mut was not specified but was needed",
-        used_recievers.ref_mut,
-    );
     let vis = &original_item.vis;
     let cfg_definitions = cfg_names.definitions(&macro_name, vis);
     quote! {
@@ -124,23 +88,12 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
                 #macro_name!{body_struct(<#gen_idents_pat>, $ty, ($field_ident), ($field_ident), ($field_ident))}
             };
             (body_struct(<#gen_matcher>, $ty:ty, ($($ident_owned:tt)*), ($($ident_ref:tt)*), ($($ident_ref_mut:tt)*))) => {
-                #macro_name!{check_owned($($ident_owned)*)}
-                #macro_name!{check_ref($($ident_ref)*)}
-                #macro_name!{check_ref_mut($($ident_ref_mut)*)}
                 #(#struct_items)*
             };
-            (check_owned()) => {
-                #check_owned
+            (check_non_empty($err:literal, $s:ident.$($t:tt)+)) => {$s.$($t)*};
+            (check_non_empty($err:literal, $s:ident.)) => {
+                compile_error! {$err}
             };
-            (check_owned($($_:tt)+)) => {};
-            (check_ref()) => {
-                #check_ref
-            };
-            (check_ref($($_:tt)+)) => {};
-            (check_ref_mut()) => {
-                #check_ref_mut
-            };
-            (check_ref_mut($($_:tt)+)) => {};
             (body_enum(<#gen_matcher>, $ty:ty, ($( $other_tys:ty ),*), ($( $variants:path ),+))) => {
                 #(#enum_items)*
             };
@@ -284,10 +237,10 @@ fn build_trait_items(
     original_item: &TraitItem,
     trait_ident: &Ident,
     gen_idents: &[&Ident],
-    used_recievers: &mut UsedReceivers,
     cfg_names: &mut CfgNames,
 ) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
     let gen_pat: TokenStream = gen_idents.iter().flat_map(|id| quote! {$#id,}).collect();
+    let macro_name = macro_name(trait_ident);
     let mut res = match original_item {
         TraitItem::Const(TraitItemConst { ident, ty, .. }) => (
             quote! {
@@ -321,16 +274,19 @@ fn build_trait_items(
                 {
                     let field_ident = match receiver_type(&original_method.sig)? {
                         ReceiverType::Owned => {
-                            used_recievers.owned = true;
-                            quote!(self.$($ident_owned)*)
+                            quote!(#macro_name!(check_non_empty(
+                                "target_owned was not specified but was needed", 
+                                self.$($ident_owned)*)))
                         }
                         ReceiverType::Ref => {
-                            used_recievers.ref_r = true;
-                            quote!(self.$($ident_ref)*)
+                            quote!(#macro_name!(check_non_empty(
+                                "target_ref was not specified but was needed", 
+                                self.$($ident_ref)*)))
                         }
                         ReceiverType::MutRef => {
-                            used_recievers.ref_mut = true;
-                            quote!(self.$($ident_ref_mut)*)
+                            quote!(#macro_name!(check_non_empty(
+                                "target_mut was not specified but was needed",
+                                self.$($ident_ref_mut)*)))
                         }
                     };
                     let method_invocation = build_method_invocation(original_method, &field_ident);
@@ -366,7 +322,6 @@ fn build_trait_items(
     };
     if let Some(pred) = extract_cfg(attrs) {
         let wrapper_macro = cfg_names.get_macro(pred);
-        let macro_name = macro_name(trait_ident);
         let wrap = |x: TokenStream| quote!(#macro_name::#wrapper_macro!{#x});
         res = (wrap(res.0), wrap(res.1), wrap(res.2));
     }
