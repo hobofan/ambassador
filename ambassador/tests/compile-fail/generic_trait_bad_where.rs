@@ -21,7 +21,7 @@ fn main() {
     let m1 = SomeMap::Hash(HashMap::from([("dog".to_string(), "wuff")]));
     let m2 = SomeMap::BTree(BTreeMap::from([("cat".to_string(), "meow")]));
     assert_eq!(m1["dog"], "wuff");
-    //~^ ERROR the trait bound `u32: From<&_>` is not satisfied
+    //~^ ERROR the trait bound `&_: Into<u32>` is not satisfied
     assert_eq!(m2["cat"], "meow");
-    //~^ ERROR the trait bound `u32: From<&_>` is not satisfied
+    //~^ ERROR the trait bound `&_: Into<u32>` is not satisfied
 }
