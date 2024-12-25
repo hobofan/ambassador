@@ -4,7 +4,7 @@ use super::util;
 use crate::util::{error, try_option, ReceiverType};
 use itertools::Itertools;
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::{Ident, TokenStream as TokenStream2, TokenTree};
 use quote::{quote, ToTokens};
 use std::cell::Cell;
 use std::convert::{TryFrom, TryInto};
@@ -30,19 +30,18 @@ struct MethodInfo {
     used: Cell<bool>, // modified when a usage is found
 }
 
-impl TryFrom<syn::ImplItemMethod> for MethodInfo {
+impl TryFrom<syn::ImplItemFn> for MethodInfo {
     type Error = (Ident, syn::Error);
 
-    fn try_from(method: syn::ImplItemMethod) -> std::result::Result<Self, (Ident, syn::Error)> {
+    fn try_from(method: syn::ImplItemFn) -> std::result::Result<Self, (Ident, syn::Error)> {
         let receiver_or_err = util::receiver_type(&method.sig);
         let return_span = method.sig.paren_token.span;
         let mut ident = Some(method.sig.ident);
         let mut add_ident = |err| (ident.take().unwrap(), err);
         let receiver = receiver_or_err.map_err(&mut add_ident)?;
         let ret = match method.sig.output {
-            ReturnType::Default => {
-                error!(return_span, "delegated to methods must return").map_err(&mut add_ident)?
-            }
+            ReturnType::Default => error!(return_span.open(), "delegated to methods must return")
+                .map_err(&mut add_ident)?,
             ReturnType::Type(_, t) => *t,
         };
         let ret = match (ret, receiver) {
@@ -188,20 +187,37 @@ impl DelegateTarget {
     }
 }
 
+fn replace_semi_with_block(input: TokenStream2) -> TokenStream2 {
+    input
+        .into_iter()
+        .map(|token| match token {
+            TokenTree::Punct(p) if p.as_char() == ';' => TokenTree::Group(proc_macro2::Group::new(
+                proc_macro2::Delimiter::Brace,
+                TokenStream2::new(),
+            )),
+            token => token,
+        })
+        .collect()
+}
+
 // Checks that:
 //   - all the items in an impl are methods
 //   - all the methods are _empty_ (no body, just the signature)
 fn check_for_method_impls_and_extras(impl_items: &[syn::ImplItem]) -> Result<()> {
     let iter = impl_items.iter().filter_map(|i| {
+        let mut i = i;
         // We're looking for *only* empty methods (no block).
-        if let syn::ImplItem::Method(m) = i {
+        let mut _item: Option<syn::ImplItem> = None;
+        // syn 2 doesn't parse functions with omitted blocks as ImplItemFn.
+        if let syn::ImplItem::Verbatim(v) = i {
+            _item = Some(syn::parse2::<syn::ImplItem>(replace_semi_with_block(v.clone())).ok()?);
+            i = _item.as_ref().unwrap();
+        }
+        if let syn::ImplItem::Fn(m) = i {
             let block = &m.block;
-            let empty_block = syn::parse2::<syn::ImplItemMethod>(quote! { fn foo(); })
-                .unwrap()
-                .block;
 
             // We'll accept `{}` blocks and omitted blocks (i.e. `fn foo();`):
-            if block.stmts.is_empty() || block == &empty_block {
+            if block.stmts.is_empty() {
                 None
             } else {
                 Some(syn::Error::new(
@@ -257,7 +273,7 @@ pub fn delegate_macro(input: TokenStream, keep_impl_block: bool) -> TokenStream 
     let mut input = parse_macro_input!(input as ItemImpl);
     let attrs = std::mem::take(&mut input.attrs);
     assert!(
-        attrs.iter().all(|attr| attr.path.is_ident("delegate")),
+        attrs.iter().all(|attr| attr.path().is_ident("delegate")),
         "All attributes must be \"delegate\""
     );
     let keep_info = if keep_impl_block {
@@ -269,7 +285,13 @@ pub fn delegate_macro(input: TokenStream, keep_impl_block: bool) -> TokenStream 
         .items
         .into_iter()
         .filter_map(|item| match item {
-            syn::ImplItem::Method(method) => Some(method.try_into()),
+            syn::ImplItem::Fn(method) => Some(method.try_into()),
+            syn::ImplItem::Verbatim(v) => {
+                // syn 2 doesn't parse functions with omitted blocks as ImplItemFn.
+                syn::parse2::<syn::ImplItemFn>(replace_semi_with_block(v))
+                    .ok()
+                    .map(MethodInfo::try_from)
+            }
             _ => None,
         })
         .partition_result();

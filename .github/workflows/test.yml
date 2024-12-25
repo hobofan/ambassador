@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - 1.53.0
+          - 1.68.0
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
@@ -34,7 +34,7 @@ jobs:
       matrix:
         rust:
           - 1.79.0
-          # It's useful to test applications of these macros to newer features so using 1.53 for tests doesn't work
+          # It's useful to test applications of these macros to newer features so using 1.68 for tests doesn't work
           # This needs to be locked to a specific version of Rust since the exact error messages may change
           # When switching this Rust version make sure to also update tests to use newer error messages if applicable
     steps:

@@ -90,8 +90,8 @@ pub(super) fn delegate_macro<I>(
     // Parse the input tokens into a syntax tree
     let mut delegate_attributes = attrs
         .into_iter()
-        .filter(|attr| attr.path.is_ident("delegate"))
-        .map(|attr| attr.tokens)
+        .filter(|attr| attr.path().is_ident("delegate"))
+        .map(|attr| attr.meta.to_token_stream().into_iter().skip(1).collect())
         .peekable();
     if delegate_attributes.peek().is_none() {
         return error!(
