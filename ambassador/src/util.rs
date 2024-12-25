@@ -122,11 +122,11 @@ fn receiver_type_inner(r: &Receiver) -> ReceiverType {
 
 pub(crate) fn receiver_type(sig: &syn::Signature) -> Result<ReceiverType> {
     match sig.receiver() {
-        Some(syn::FnArg::Receiver(r)) => Ok(receiver_type_inner(r)),
-        Some(syn::FnArg::Typed(t)) => error!(
-            t.span(),
+        Some(r) if r.colon_token.is_none() => Ok(receiver_type_inner(r)),
+        Some(r) => error!(
+            r.span(),
             "method's receiver type is not supported (must one of self, &self, or &mut self)"
         ),
-        None => error!(sig.paren_token.span, "method must have a receiver"),
+        None => error!(sig.paren_token.span.open(), "method must have a receiver"),
     }
 }
