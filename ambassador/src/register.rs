@@ -4,7 +4,7 @@ use proc_macro2::{Delimiter, Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::spanned::Spanned;
 use syn::{
-    AttrStyle, Attribute, ConstParam, GenericParam, ItemTrait, LifetimeDef, TraitItem,
+    AttrStyle, Attribute, ConstParam, GenericParam, ItemTrait, LifetimeDef, ReturnType, TraitItem,
     TraitItemConst, TraitItemType, TypeParam, Visibility,
 };
 
@@ -295,9 +295,19 @@ fn build_trait_items(
                 {
                     let method_invocation =
                         build_method_invocation(original_method, &quote!(inner));
-                    let method_invocation = quote! {
-                        match self {
-                            $($variants(inner) => #method_invocation),*
+                    let method_invocation = if returns_impl_future(&original_method.sig.output) {
+                        quote! {
+                            async move {
+                                match self {
+                                    $($variants(inner) => #method_invocation),*
+                                }
+                            }
+                        }
+                    } else {
+                        quote! {
+                            match self {
+                                $($variants(inner) => #method_invocation),*
+                            }
                         }
                     };
                     build_method(&method_sig, method_invocation, quote!())
@@ -328,6 +338,30 @@ fn build_trait_items(
     Ok(res)
 }
 
+fn returns_impl_future(output: &ReturnType) -> bool {
+    match output {
+        ReturnType::Default => false,
+        ReturnType::Type(_, ty) => {
+            let ty = ty.as_ref();
+            match ty {
+                syn::Type::ImplTrait(impl_trait) => impl_trait.bounds.iter().any(|bound| {
+                    if let syn::TypeParamBound::Trait(trait_bound) = bound {
+                        trait_bound
+                            .path
+                            .segments
+                            .last()
+                            .map(|segment| segment.ident == "Future")
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
+                }),
+                _ => false,
+            }
+        }
+    }
+}
+
 fn build_method_invocation(
     original_method: &syn::TraitItemMethod,
     field_ident: &TokenStream,
@@ -348,7 +382,9 @@ fn build_method_invocation(
         GenericParam::Lifetime(_) => None,
         GenericParam::Const(c) => Some(&c.ident),
     });
-    let post = if original_method.sig.asyncness.is_some() {
+    let post = if original_method.sig.asyncness.is_some()
+        || returns_impl_future(&original_method.sig.output)
+    {
         quote!(.await)
     } else {
         quote!()
