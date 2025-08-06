@@ -289,18 +289,23 @@ fn build_trait_items(
                                 self.$($ident_ref_mut)*)))
                         }
                     };
-                    let method_invocation = build_method_invocation(original_method, &field_ident);
+                    let method_invocation =
+                        build_method_invocation(original_method, &field_ident, false);
                     build_method(&method_sig, method_invocation, quote!())
                 },
                 {
-                    let method_invocation =
-                        build_method_invocation(original_method, &quote!(inner));
-                    let method_invocation = if returns_impl_future(&original_method.sig.output) {
+                    let returns_impl_future = returns_impl_future(&original_method.sig.output);
+                    let method_invocation = build_method_invocation(
+                        original_method,
+                        &quote!(inner),
+                        returns_impl_future,
+                    );
+                    let method_invocation = if returns_impl_future {
                         quote! {
                             async move {
                                 match self {
                                     $($variants(inner) => #method_invocation),*
-                                }
+                                 }
                             }
                         }
                     } else {
@@ -313,7 +318,8 @@ fn build_trait_items(
                     build_method(&method_sig, method_invocation, quote!())
                 },
                 {
-                    let method_invocation = build_method_invocation(original_method, &quote!(self));
+                    let method_invocation =
+                        build_method_invocation(original_method, &quote!(self), false);
                     build_method(
                         &method_sig,
                         method_invocation,
@@ -338,6 +344,41 @@ fn build_trait_items(
     Ok(res)
 }
 
+fn build_method_invocation(
+    original_method: &syn::TraitItemMethod,
+    field_ident: &TokenStream,
+    force_add_await: bool,
+) -> TokenStream {
+    let method_sig = &original_method.sig;
+    let method_ident = &method_sig.ident;
+    let argument_list: syn::punctuated::Punctuated<&Box<syn::Pat>, syn::token::Comma> = method_sig
+        .inputs
+        .iter()
+        .filter_map(|fn_arg| match fn_arg {
+            syn::FnArg::Receiver(_) => None,
+            syn::FnArg::Typed(pat_type) => Some(&pat_type.pat),
+        })
+        .collect();
+
+    let generics = method_sig.generics.params.iter().filter_map(|x| match x {
+        GenericParam::Type(t) => Some(&t.ident),
+        GenericParam::Lifetime(_) => None,
+        GenericParam::Const(c) => Some(&c.ident),
+    });
+
+    let should_add_await = original_method.sig.asyncness.is_some() || force_add_await;
+
+    let post = if should_add_await {
+        quote!(.await)
+    } else {
+        quote!()
+    };
+
+    let method_invocation =
+        quote! { #field_ident.#method_ident::<#(#generics,)*>(#argument_list) #post };
+    method_invocation
+}
+
 fn returns_impl_future(output: &ReturnType) -> bool {
     match output {
         ReturnType::Default => false,
@@ -360,37 +401,4 @@ fn returns_impl_future(output: &ReturnType) -> bool {
             }
         }
     }
-}
-
-fn build_method_invocation(
-    original_method: &syn::TraitItemMethod,
-    field_ident: &TokenStream,
-) -> TokenStream {
-    let method_sig = &original_method.sig;
-    let method_ident = &method_sig.ident;
-    let argument_list: syn::punctuated::Punctuated<&Box<syn::Pat>, syn::token::Comma> = method_sig
-        .inputs
-        .iter()
-        .filter_map(|fn_arg| match fn_arg {
-            syn::FnArg::Receiver(_) => None,
-            syn::FnArg::Typed(pat_type) => Some(&pat_type.pat),
-        })
-        .collect();
-
-    let generics = method_sig.generics.params.iter().filter_map(|x| match x {
-        GenericParam::Type(t) => Some(&t.ident),
-        GenericParam::Lifetime(_) => None,
-        GenericParam::Const(c) => Some(&c.ident),
-    });
-    let post = if original_method.sig.asyncness.is_some()
-        || returns_impl_future(&original_method.sig.output)
-    {
-        quote!(.await)
-    } else {
-        quote!()
-    };
-
-    let method_invocation =
-        quote! { #field_ident.#method_ident::<#(#generics,)*>(#argument_list) #post };
-    method_invocation
 }

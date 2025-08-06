@@ -38,4 +38,10 @@ pub enum Either {
     Base2(Base2),
 }
 
+#[derive(Delegate)]
+#[delegate(Hello)]
+pub struct One {
+    base: Base1,
+}
+
 pub fn main() {}
