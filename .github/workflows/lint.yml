@@ -22,7 +22,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
           override: true
       - run: rustup component add rustfmt
-      - run: cargo +nightly update -Z minimal-versions
+      - run: cargo +nightly-2021-06-17 update -Z minimal-versions
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -48,7 +48,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
           override: true
       - run: rustup component add clippy
-      - run: cargo +nightly update -Z minimal-versions
+      - run: cargo +nightly-2021-06-17  update -Z minimal-versions
       - uses: actions-rs/cargo@v1
         with:
           command: clippy

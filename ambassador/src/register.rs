@@ -147,6 +147,7 @@ fn make_assoc_ty_bound(
 ) -> TokenStream {
     let trait_ident = &item_trait.ident;
     let gen_params = &item_trait.generics.params;
+    let gen_where = &item_trait.generics.where_clause;
     let gen_params_t = super::util::TailingPunctuated(gen_params);
 
     let gen_tokens: TokenStream = gen_params.iter().flat_map(param_to_tokens).collect();
@@ -166,9 +167,9 @@ fn make_assoc_ty_bound(
     quote! {
         #[doc(hidden)]
         #[allow(non_camel_case_types)]
-        pub trait #match_name<#gen_params_t ambassador_X: #trait_ident<#gen_tokens>>: #new_bound {}
+        pub trait #match_name<#gen_params_t ambassador_X: #trait_ident<#gen_tokens>>: #new_bound #gen_where {}
         #[allow(non_camel_case_types)]
-        impl<#gen_params_t ambassador_X: #trait_ident<#gen_tokens>, ambassador_Y: #new_bound> #match_name<#gen_tokens ambassador_X> for ambassador_Y {} // Replace with trait alias when they become stable
+        impl<#gen_params_t ambassador_X: #trait_ident<#gen_tokens>, ambassador_Y: #new_bound> #match_name<#gen_tokens ambassador_X> for ambassador_Y #gen_where {}
     }
 }
 
