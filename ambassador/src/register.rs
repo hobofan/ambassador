@@ -1,11 +1,11 @@
 use crate::util::{error, process_results, receiver_type, ReceiverType};
 use itertools::Itertools;
-use proc_macro2::{Delimiter, Ident, TokenStream, TokenTree};
+use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::spanned::Spanned;
 use syn::{
-    AttrStyle, Attribute, ConstParam, GenericParam, ItemTrait, LifetimeDef, ReturnType, TraitItem,
-    TraitItemConst, TraitItemType, TypeParam, Visibility,
+    AttrStyle, Attribute, ConstParam, GenericParam, ItemTrait, LifetimeParam, ReturnType,
+    TraitItem, TraitItemConst, TraitItemType, TypeParam, Visibility,
 };
 
 pub(crate) fn macro_name(trait_ident: &Ident) -> Ident {
@@ -116,7 +116,7 @@ pub fn build_register_trait(original_item: &ItemTrait) -> TokenStream {
 fn param_to_ident(param: &GenericParam) -> &Ident {
     match param {
         GenericParam::Type(TypeParam { ident, .. }) => ident,
-        GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => &lifetime.ident,
+        GenericParam::Lifetime(LifetimeParam { lifetime, .. }) => &lifetime.ident,
         GenericParam::Const(ConstParam { ident, .. }) => ident,
     }
 }
@@ -124,7 +124,7 @@ fn param_to_ident(param: &GenericParam) -> &Ident {
 fn param_to_matcher(param: &GenericParam) -> TokenStream {
     match param {
         GenericParam::Type(TypeParam { ident, .. }) => quote!($ #ident : ty,),
-        GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => {
+        GenericParam::Lifetime(LifetimeParam { lifetime, .. }) => {
             let ident = &lifetime.ident;
             quote!($ #ident : lifetime,)
         }
@@ -135,7 +135,7 @@ fn param_to_matcher(param: &GenericParam) -> TokenStream {
 fn param_to_tokens(param: &GenericParam) -> TokenStream {
     match param {
         GenericParam::Type(TypeParam { ident, .. }) => quote!(#ident,),
-        GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => quote!(#lifetime,),
+        GenericParam::Lifetime(LifetimeParam { lifetime, .. }) => quote!(#lifetime,),
         GenericParam::Const(ConstParam { ident, .. }) => quote!(#ident,),
     }
 }
@@ -220,9 +220,9 @@ fn build_method(
 fn extract_cfg(attrs: &[Attribute]) -> Option<TokenStream> {
     let mut iter = attrs
         .iter()
-        .filter(|attr| attr.style == AttrStyle::Outer && attr.path.is_ident("cfg"))
-        .filter_map(|attr| match attr.tokens.clone().into_iter().next()? {
-            TokenTree::Group(x) if x.delimiter() == Delimiter::Parenthesis => Some(x.stream()),
+        .filter(|attr| attr.style == AttrStyle::Outer && attr.path().is_ident("cfg"))
+        .filter_map(|attr| match &attr.meta {
+            syn::Meta::List(meta_list) => Some(meta_list.tokens.clone()),
             _ => None,
         });
     let e0 = iter.next()?;
@@ -268,7 +268,7 @@ fn build_trait_items(
                 quote! {compile_error!("trg=\"self\" is not allowed with associated types")},
             )
         }
-        TraitItem::Method(original_method) => {
+        TraitItem::Fn(original_method) => {
             let method_sig = original_method.sig.to_token_stream();
             let method_sig = replace_gen_idents(method_sig, gen_idents);
             (
@@ -334,7 +334,7 @@ fn build_trait_items(
     let attrs: &[Attribute] = match original_item {
         TraitItem::Const(c) => &c.attrs,
         TraitItem::Type(t) => &t.attrs,
-        TraitItem::Method(m) => &m.attrs,
+        TraitItem::Fn(m) => &m.attrs,
         _ => &[],
     };
     if let Some(pred) = extract_cfg(attrs) {
@@ -346,7 +346,7 @@ fn build_trait_items(
 }
 
 fn build_method_invocation(
-    original_method: &syn::TraitItemMethod,
+    original_method: &syn::TraitItemFn,
     field_ident: &TokenStream,
     force_add_await: bool,
 ) -> TokenStream {

@@ -89,16 +89,12 @@ fn try_info_from_data(span: Span, data: syn::Data) -> Result<DelegateImplementer
     Ok(res)
 }
 
+#[derive(Default)]
 enum DelegateTarget {
     Field(syn::Member),
+    #[default]
     TrgNone,
     TrgSelf,
-}
-
-impl Default for DelegateTarget {
-    fn default() -> Self {
-        DelegateTarget::TrgNone
-    }
 }
 
 impl delegate_shared::DelegateTarget for DelegateTarget {
