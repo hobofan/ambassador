@@ -368,6 +368,7 @@ fn delegate_single_attr(
 
     if added_deref {
         res = quote! {
+            #[allow(clippy::unused_unit)]
             const _: () = {
                 #[allow(unused_imports)]
                 use ::core::ops::{Deref as _, DerefMut as _};
