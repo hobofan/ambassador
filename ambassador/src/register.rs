@@ -5,7 +5,7 @@ use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::spanned::Spanned;
 use syn::{
-    AttrStyle, Attribute, ConstParam, GenericParam, ItemTrait, LifetimeParam, ReturnType,
+    AttrStyle, Attribute, ConstParam, GenericParam, ItemTrait, LifetimeParam, ReturnType, Safety,
     TraitItem, TraitItemConst, TraitItemType, TypeParam, Visibility,
 };
 
@@ -411,7 +411,7 @@ fn build_method_invocation(
     } else {
         quote! { $ret #field.#method_ident::<#(#generics,)*>(#argument_list) #post }
     };
-    if original_method.sig.unsafety.is_some() {
+    if matches!(original_method.sig.safety, Safety::Unsafe(_)) {
         method_invocation = quote! (
             // SAFETY: All safety obligation are passed along
             unsafe {#method_invocation}

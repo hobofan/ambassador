@@ -3,7 +3,7 @@ use quote::ToTokens;
 use std::fmt::{Display, Formatter};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{Receiver, Result};
+use syn::{ReceiverKind, Result, Token};
 
 macro_rules! error {
     ($span:expr, $($rest:expr),*) => {Err(syn::parse::Error::new($span, format_args!($($rest),*)))};
@@ -110,23 +110,20 @@ impl Display for ReceiverType {
     }
 }
 
-fn receiver_type_inner(r: &Receiver) -> ReceiverType {
-    if r.reference.is_none() {
-        ReceiverType::Owned
-    } else if r.mutability.is_none() {
-        ReceiverType::Ref
-    } else {
-        ReceiverType::MutRef
-    }
-}
-
 pub(crate) fn receiver_type(sig: &syn::Signature) -> Result<ReceiverType> {
-    match sig.receiver() {
-        Some(r) if r.colon_token.is_none() => Ok(receiver_type_inner(r)),
-        Some(r) => error!(
-            r.span(),
+    let Some(receiver) = sig.receiver() else {
+        return error!(sig.paren_token.span.open(), "method must have a receiver");
+    };
+    match receiver.kind {
+        ReceiverKind::Value => Ok(ReceiverType::Owned),
+        ReceiverKind::Reference(_, _, None) => Ok(ReceiverType::Ref),
+        ReceiverKind::Reference(_, _, Some(x)) => {
+            let _: Token![mut] = x;
+            Ok(ReceiverType::MutRef)
+        }
+        _ => error!(
+            receiver.span(),
             "method's receiver type is not supported (must one of self, &self, or &mut self)"
         ),
-        None => error!(sig.paren_token.span.open(), "method must have a receiver"),
     }
 }
